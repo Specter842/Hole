@@ -1,0 +1,3 @@
+Title,Description,Url,Started On,Finished On
+Raft key-value store,"Senior project: a distributed key-value store implementing Raft consensus in Go, with a test harness that injects network partitions.",https://github.com/example-sam/raftkv,Jan 2021,May 2021
+Internal data pipeline,"Airflow pipeline consolidating order, inventory, and support data into a Snowflake warehouse with dbt models and column-level tests. Replaced 6 manual spreadsheet reports and cut month-end close from 5 days to 1.",,Jan 2024,Aug 2024

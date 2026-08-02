@@ -1,0 +1,9 @@
+Company Name,Title,Description,Location,Started On,Finished On
+Northwind Retail,Senior Software Engineer,"Owned the checkout and payments surface.
+- Rebuilt the checkout API as an event-driven Python and FastAPI service on PostgreSQL and Redis, cutting p95 checkout latency from 1.9s to 380ms and reducing failed orders 63%.
+- Designed the idempotency layer and retry semantics, migrating behind a feature flag with zero downtime.
+- Moved 14 services from Jenkins to GitHub Actions with containerized builds and canary deploys on Kubernetes, taking releases from weekly to 11 per day.
+- Ran weekly code review clinics for three junior engineers; review turnaround improved from 2 days to 6 hours.",Austin TX,Feb 2023,Jan 2025
+Beacon Labs,Growth Marketing Manager,"Ran developer-facing content and launch campaigns.
+- Grew the developer newsletter from 900 to 14,000 subscribers in 18 months at a 41% open rate.
+- Coordinated positioning, landing page copy, and a launch-day webinar that generated 2,300 signups in launch week, 19% of which converted to paid.",Remote,May 2021,Dec 2022

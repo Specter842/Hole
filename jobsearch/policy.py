@@ -1,0 +1,251 @@
+"""The autonomy decision.
+
+Two gates, deliberately separated.
+
+`screen` runs before tailoring and answers "is this worth an API call". It is
+cheap and only looks at the posting.
+
+`decide_dispatch` runs after tailoring, verification, and grounding checks, and
+answers "does this go out without a human". It is the only place that can return
+SEND, and it says no unless every check passes.
+
+Every decision carries its reasons. An unattended pipeline that cannot explain
+itself afterwards is not something you should let email employers on your behalf.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Sequence
+
+from . import db, matching
+from .config import Config
+
+SEND = "send"
+QUEUE = "queue"
+SKIP = "skip"
+
+# Placeholders boards use when they have not filled the location in.
+UNKNOWN_LOCATIONS = {
+    "n/a", "n a", "na", "none", "tbd", "tba", "unknown", "various",
+    "multiple", "multiple locations", "-", "--",
+}
+
+
+@dataclass
+class Decision:
+    action: str
+    reasons: list[str] = field(default_factory=list)
+
+    @property
+    def sends(self) -> bool:
+        return self.action == SEND
+
+    def __str__(self) -> str:
+        return f"{self.action}: " + "; ".join(self.reasons)
+
+
+@dataclass
+class PolicyContext:
+    """Counters the caps are measured against. Loaded once per run."""
+
+    sent_today: int = 0
+    sent_this_run: int = 0
+    tailored_this_run: int = 0
+    per_company_week: dict[str, int] = field(default_factory=dict)
+    applied_fingerprints: set[str] = field(default_factory=set)
+
+    @classmethod
+    def load(cls, conn: sqlite3.Connection) -> "PolicyContext":
+        today = date.today().isoformat()
+        week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).date().isoformat()
+
+        sent_today = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM applications WHERE sent_date = ?", (today,)
+            ).fetchone()[0]
+        )
+        per_company: dict[str, int] = {}
+        for row in conn.execute(
+            "SELECT company, COUNT(*) AS n FROM applications "
+            "WHERE sent_date >= ? GROUP BY company",
+            (week_ago,),
+        ):
+            if row["company"]:
+                per_company[_norm(row["company"])] = int(row["n"])
+
+        applied: set[str] = set()
+        for row in conn.execute(
+            "SELECT company, role FROM applications WHERE status IN ('approved','sent','responded')"
+        ):
+            applied.add(_pair(row["company"], row["role"]))
+        return cls(
+            sent_today=sent_today,
+            per_company_week=per_company,
+            applied_fingerprints=applied,
+        )
+
+    def record_sent(self, company: str | None) -> None:
+        self.sent_today += 1
+        self.sent_this_run += 1
+        if company:
+            key = _norm(company)
+            self.per_company_week[key] = self.per_company_week.get(key, 0) + 1
+
+
+def _norm(value: str | None) -> str:
+    return " ".join((value or "").lower().split())
+
+
+def _pair(company: str | None, role: str | None) -> str:
+    return f"{_norm(company)}|{_norm(role)}"
+
+
+# --------------------------------------------------------------------------- screening
+
+
+def title_matches(title: str, wanted: Sequence[str]) -> bool:
+    """Loose title match. No configured titles means everything passes.
+
+    Guards against the obvious failure of following a company's board and then
+    applying to its warehouse openings.
+    """
+    if not wanted:
+        return True
+    posting_tokens = set(matching.content_tokens(title))
+    if not posting_tokens:
+        return False
+    for candidate in wanted:
+        if _norm(candidate) in _norm(title):
+            return True
+        tokens = set(matching.content_tokens(candidate))
+        if not tokens:
+            continue
+        overlap = len(tokens & posting_tokens) / len(tokens)
+        if overlap >= 0.6:
+            return True
+    return False
+
+
+def _too_old(posted_at: str | None, max_age_days: int) -> bool:
+    if not posted_at or max_age_days <= 0:
+        return False
+    try:
+        posted = datetime.strptime(posted_at[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return False
+    return (date.today() - posted).days > max_age_days
+
+
+def screen(job: dict[str, Any], config: Config, context: PolicyContext) -> Decision:
+    """Cheap pre-tailoring filter. Only SKIP or QUEUE (meaning 'proceed')."""
+    search = config.search
+    company = job.get("company") or ""
+    title = job.get("title") or ""
+    text = f"{title}\n{job.get('description') or ''}".lower()
+
+    if _norm(company) in {_norm(c) for c in search.exclude_companies}:
+        return Decision(SKIP, [f"{company} is on the exclude list"])
+
+    hit = next((k for k in search.exclude_keywords if k and k in text), None)
+    if hit:
+        return Decision(SKIP, [f"posting mentions excluded keyword '{hit}'"])
+
+    if not title_matches(title, search.titles):
+        return Decision(SKIP, [f"title '{title}' does not match any configured title"])
+
+    if search.remote_only and not job.get("remote"):
+        return Decision(SKIP, ["remote_only is set and this posting is not remote"])
+
+    if search.locations and not job.get("remote"):
+        location = _norm(job.get("location"))
+        # Boards commonly emit "N/A" or leave it blank. Unknown is not the same
+        # as wrong -- let the fit score decide those rather than dropping them.
+        if location and location not in UNKNOWN_LOCATIONS:
+            if not any(_norm(l) in location for l in search.locations):
+                return Decision(
+                    SKIP, [f"location '{job.get('location')}' is outside the configured list"]
+                )
+
+    if _too_old(job.get("posted_at"), search.max_age_days):
+        return Decision(SKIP, [f"posted {job.get('posted_at')}, older than {search.max_age_days} days"])
+
+    if _pair(company, title) in context.applied_fingerprints:
+        return Decision(SKIP, ["already applied to this role"])
+
+    fit = job.get("fit_score")
+    if fit is not None and fit < search.min_fit:
+        return Decision(SKIP, [f"fit {fit:.0f} below min_fit {search.min_fit:.0f}"])
+
+    if context.tailored_this_run >= config.limits.max_tailor_per_run:
+        return Decision(SKIP, [f"hit max_tailor_per_run ({config.limits.max_tailor_per_run})"])
+
+    reasons = [f"fit {fit:.0f}" if fit is not None else "not scored yet"]
+    return Decision(QUEUE, reasons)
+
+
+# --------------------------------------------------------------------------- dispatch
+
+
+def available_channel(job: dict[str, Any], config: Config) -> str | None:
+    """First configured channel that can actually handle this posting."""
+    for channel in config.dispatch.channel_order:
+        if channel == "ats_form":
+            if config.dispatch.ats.enabled and job.get("apply_url"):
+                return "ats_form"
+        elif channel == "email":
+            if config.dispatch.email.enabled:
+                return "email"
+    return None
+
+
+def decide_dispatch(
+    job: dict[str, Any],
+    config: Config,
+    context: PolicyContext,
+    *,
+    grounding_findings: Sequence[Any] = (),
+    missing_profile_fields: Sequence[str] = (),
+    used_unverified: bool = False,
+) -> Decision:
+    """The only function that can authorize sending. Defaults to holding back."""
+    limits = config.limits
+    reasons: list[str] = []
+
+    if not config.autonomous:
+        return Decision(QUEUE, ["autonomous is off -- prepared but not sent"])
+
+    if grounding_findings and config.dispatch.require_clean_grounding:
+        kinds = sorted({getattr(f, "kind", "finding") for f in grounding_findings})
+        return Decision(QUEUE, [f"grounding check flagged {len(grounding_findings)} item(s): {', '.join(kinds)}"])
+
+    if missing_profile_fields:
+        return Decision(QUEUE, [f"profile is missing {', '.join(missing_profile_fields)}"])
+
+    if used_unverified and config.dispatch.require_verified_records:
+        return Decision(QUEUE, ["draft used profile rows you have not confirmed"])
+
+    if context.sent_this_run >= limits.max_applications_per_run:
+        return Decision(QUEUE, [f"hit max_applications_per_run ({limits.max_applications_per_run})"])
+
+    if context.sent_today >= limits.max_applications_per_day:
+        return Decision(QUEUE, [f"hit max_applications_per_day ({limits.max_applications_per_day})"])
+
+    company_key = _norm(job.get("company"))
+    if context.per_company_week.get(company_key, 0) >= limits.max_per_company_per_week:
+        return Decision(
+            QUEUE,
+            [f"already sent {limits.max_per_company_per_week} to {job.get('company')} this week"],
+        )
+
+    channel = available_channel(job, config)
+    if not channel:
+        return Decision(QUEUE, ["no dispatch channel is configured for this posting"])
+
+    fit = job.get("fit_score")
+    reasons.append(f"fit {fit:.0f} clears {config.search.min_fit:.0f}" if fit is not None else "scored")
+    reasons.append("grounding clean")
+    reasons.append(f"channel {channel}")
+    return Decision(SEND, reasons)

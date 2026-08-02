@@ -1,0 +1,147 @@
+# Copy to config.toml and edit. The tool never rewrites this file, so your
+# comments and formatting survive.
+#
+#   python -m jobsearch config      shows the effective settings and any problems
+
+# ---------------------------------------------------------------- master switch
+
+# false: the pipeline sources, scores, tailors, and verifies, then STOPS before
+#        sending anything. Everything lands in the review queue.
+# true:  applications that pass every policy check are sent without asking.
+#
+# Leave this false until you have watched a few runs and trust the fit scores.
+# Sending reaches real employers under your name and cannot be undone.
+autonomous = false
+
+# ---------------------------------------------------------------- what to look for
+
+[search]
+# Titles you would actually take. Matched loosely against the posting title.
+titles = [
+    "Backend Engineer",
+    "Senior Backend Engineer",
+    "Platform Engineer",
+    "Software Engineer",
+]
+
+# Extra signal for scoring. Postings missing all of these rank lower.
+keywords = ["python", "postgresql", "kubernetes", "api"]
+
+# Free text, matched against the posting location. Empty means anywhere.
+locations = ["Remote", "United States"]
+remote_only = false
+
+# Never apply to these, whatever the score.
+exclude_companies = []
+
+# Drop any posting whose text contains one of these.
+exclude_keywords = ["security clearance", "unpaid", "commission only"]
+
+# Fit score floor, 0-100. Measures how much of what a posting most insists on
+# your record actually covers.
+#
+# Calibrated against 544 live postings from one large company's board: sales and
+# support roles scored 0, the median across everything was ~7, and the genuinely
+# matching engineering roles landed at 35-43. So 30 is a real threshold, not a
+# timid one -- it admits the top band and rejects the rest.
+#
+# Run `python -m jobsearch jobs` after a pass to see your own distribution
+# before changing this. Do not assume 80 means "good"; nothing scores 80.
+min_fit = 30
+
+# Ignore postings older than this.
+max_age_days = 30
+
+# ---------------------------------------------------------------- where to look
+
+# Public job-board endpoints. Greenhouse, Lever, and Ashby need no key: one
+# request per company board. Add the companies you actually want to work at.
+
+[sources.greenhouse]
+enabled = true
+# The token is the last path segment of boards.greenhouse.io/<token>
+boards = ["stripe", "figma", "anthropic"]
+
+[sources.lever]
+enabled = false
+# The slug in jobs.lever.co/<company>
+companies = ["netflix"]
+
+[sources.ashby]
+enabled = false
+# The name in jobs.ashbyhq.com/<name>
+boards = ["ramp"]
+
+# Broad aggregators. Both are legitimate public developer APIs with free keys.
+[sources.adzuna]
+enabled = false
+app_id = ""
+app_key = ""
+country = "us"          # us, gb, ca, au, ...
+results_per_page = 50
+max_pages = 2
+
+[sources.usajobs]
+enabled = false
+email = ""              # the address you registered with
+api_key = ""
+results_per_page = 50
+
+# There is deliberately no Indeed connector. Indeed has no public read API and
+# blocks scraping. There is deliberately no LinkedIn connector either -- see the
+# note at the bottom of this file.
+
+# ---------------------------------------------------------------- rate limits
+
+[limits]
+# Volume is not the goal. These caps exist so a bad scoring day cannot turn into
+# fifty identical applications with your name on them.
+max_applications_per_day = 10
+max_applications_per_run = 5
+max_per_company_per_week = 2
+
+# Tailoring costs an API call each, so cap it independently of sending.
+max_tailor_per_run = 8
+
+# ---------------------------------------------------------------- how to apply
+
+[dispatch]
+# Tried in order; the first channel that can handle a posting wins.
+channel_order = ["ats_form", "email"]
+
+# Refuse to send anything the grounding check flagged. Strongly recommended:
+# this is what stops an invented metric reaching an employer.
+require_clean_grounding = true
+
+# Refuse to use profile rows a model extracted but you have not confirmed.
+# Turn this on once you have run `python -m jobsearch review`.
+require_verified_records = false
+
+[dispatch.email]
+enabled = false
+# From Google Cloud Console: create an OAuth client (Desktop app), enable the
+# Gmail API, download the JSON. First send opens a browser once to authorize.
+credentials_file = "gmail_credentials.json"
+token_file = "gmail_token.json"
+from_name = ""
+reply_to = ""
+daily_cap = 20
+
+[dispatch.ats]
+# Fills Greenhouse/Lever/Ashby application forms in a real browser.
+# Needs: pip install playwright && playwright install chromium
+enabled = false
+headless = true
+timeout_seconds = 45
+screenshot_dir = "output/_ats"
+
+# ---------------------------------------------------------------- LinkedIn
+#
+# There is no LinkedIn automation and there will not be. Their User Agreement
+# bans automated access and enforces it with account restrictions -- losing the
+# account you job-hunt from is not worth a few saved clicks.
+#
+# What the tool does instead: drafts the connection note or DM, stores it, and
+# gives you the deep link. You paste and send in your own browser.
+#
+#   python -m jobsearch outreach list

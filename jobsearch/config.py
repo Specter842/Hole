@@ -1,0 +1,242 @@
+"""Pipeline configuration.
+
+Read from `config.toml` next to the database. The file is never rewritten by the
+tool, so comments and hand-edits survive.
+
+One setting matters more than the rest: `autonomous`. It ships **false**. Sending
+an application is outward-facing and irreversible -- it reaches a real employer
+under your name -- so the pipeline will source, score, tailor, and verify without
+it, and stop at the send step. Flip it to true when you have watched a few runs
+and trust the fit scores.
+"""
+
+from __future__ import annotations
+
+import tomllib
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from .db import PROJECT_ROOT
+
+CONFIG_NAME = "config.toml"
+EXAMPLE_NAME = "config.example.toml"
+
+
+class ConfigError(RuntimeError):
+    pass
+
+
+def _get(mapping: dict[str, Any], path: str, default: Any = None) -> Any:
+    node: Any = mapping
+    for part in path.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return default
+        node = node[part]
+    return node
+
+
+def _str_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
+@dataclass
+class SearchConfig:
+    titles: list[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
+    locations: list[str] = field(default_factory=list)
+    remote_only: bool = False
+    exclude_companies: list[str] = field(default_factory=list)
+    exclude_keywords: list[str] = field(default_factory=list)
+    # Calibrated against real board data: across 544 live Stripe postings a
+    # backend profile scored 0 on sales roles, ~7 median, and 35-43 on the
+    # genuinely matching engineering roles. 30 sits just under that top band.
+    min_fit: float = 30.0
+    max_age_days: int = 30
+
+
+@dataclass
+class SourceConfig:
+    name: str
+    enabled: bool = False
+    settings: dict[str, Any] = field(default_factory=dict)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.settings.get(key, default)
+
+    def list_of(self, key: str) -> list[str]:
+        return _str_list(self.settings.get(key))
+
+
+@dataclass
+class LimitsConfig:
+    max_applications_per_day: int = 10
+    max_applications_per_run: int = 5
+    max_per_company_per_week: int = 2
+    max_tailor_per_run: int = 8
+
+
+@dataclass
+class EmailConfig:
+    enabled: bool = False
+    credentials_file: str = "gmail_credentials.json"
+    token_file: str = "gmail_token.json"
+    from_name: str = ""
+    reply_to: str = ""
+    daily_cap: int = 20
+
+
+@dataclass
+class AtsConfig:
+    enabled: bool = False
+    headless: bool = True
+    timeout_seconds: int = 45
+    screenshot_dir: str = "output/_ats"
+
+
+@dataclass
+class DispatchConfig:
+    channel_order: list[str] = field(default_factory=lambda: ["ats_form", "email"])
+    require_clean_grounding: bool = True
+    require_verified_records: bool = False
+    email: EmailConfig = field(default_factory=EmailConfig)
+    ats: AtsConfig = field(default_factory=AtsConfig)
+
+
+@dataclass
+class Config:
+    autonomous: bool = False
+    search: SearchConfig = field(default_factory=SearchConfig)
+    limits: LimitsConfig = field(default_factory=LimitsConfig)
+    dispatch: DispatchConfig = field(default_factory=DispatchConfig)
+    sources: dict[str, SourceConfig] = field(default_factory=dict)
+    path: Path | None = None
+
+    # ------------------------------------------------------------------ loading
+
+    @classmethod
+    def load(cls, path: str | Path | None = None) -> "Config":
+        config_path = Path(path) if path else PROJECT_ROOT / CONFIG_NAME
+        if not config_path.is_file():
+            return cls(path=config_path)
+        try:
+            raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:
+            raise ConfigError(f"{config_path} is not valid TOML: {exc}") from exc
+        return cls.from_dict(raw, path=config_path)
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any], *, path: Path | None = None) -> "Config":
+        search = SearchConfig(
+            titles=_str_list(_get(raw, "search.titles")),
+            keywords=_str_list(_get(raw, "search.keywords")),
+            locations=_str_list(_get(raw, "search.locations")),
+            remote_only=bool(_get(raw, "search.remote_only", False)),
+            exclude_companies=[c.lower() for c in _str_list(_get(raw, "search.exclude_companies"))],
+            exclude_keywords=[k.lower() for k in _str_list(_get(raw, "search.exclude_keywords"))],
+            min_fit=float(_get(raw, "search.min_fit", 45.0)),
+            max_age_days=int(_get(raw, "search.max_age_days", 30)),
+        )
+        limits = LimitsConfig(
+            max_applications_per_day=int(_get(raw, "limits.max_applications_per_day", 10)),
+            max_applications_per_run=int(_get(raw, "limits.max_applications_per_run", 5)),
+            max_per_company_per_week=int(_get(raw, "limits.max_per_company_per_week", 2)),
+            max_tailor_per_run=int(_get(raw, "limits.max_tailor_per_run", 8)),
+        )
+        dispatch = DispatchConfig(
+            channel_order=_str_list(_get(raw, "dispatch.channel_order")) or ["ats_form", "email"],
+            require_clean_grounding=bool(_get(raw, "dispatch.require_clean_grounding", True)),
+            require_verified_records=bool(_get(raw, "dispatch.require_verified_records", False)),
+            email=EmailConfig(
+                enabled=bool(_get(raw, "dispatch.email.enabled", False)),
+                credentials_file=str(_get(raw, "dispatch.email.credentials_file", "gmail_credentials.json")),
+                token_file=str(_get(raw, "dispatch.email.token_file", "gmail_token.json")),
+                from_name=str(_get(raw, "dispatch.email.from_name", "")),
+                reply_to=str(_get(raw, "dispatch.email.reply_to", "")),
+                daily_cap=int(_get(raw, "dispatch.email.daily_cap", 20)),
+            ),
+            ats=AtsConfig(
+                enabled=bool(_get(raw, "dispatch.ats.enabled", False)),
+                headless=bool(_get(raw, "dispatch.ats.headless", True)),
+                timeout_seconds=int(_get(raw, "dispatch.ats.timeout_seconds", 45)),
+                screenshot_dir=str(_get(raw, "dispatch.ats.screenshot_dir", "output/_ats")),
+            ),
+        )
+        sources: dict[str, SourceConfig] = {}
+        for name, settings in (raw.get("sources") or {}).items():
+            if not isinstance(settings, dict):
+                continue
+            sources[name] = SourceConfig(
+                name=name,
+                enabled=bool(settings.get("enabled", False)),
+                settings={k: v for k, v in settings.items() if k != "enabled"},
+            )
+        return cls(
+            autonomous=bool(raw.get("autonomous", False)),
+            search=search,
+            limits=limits,
+            dispatch=dispatch,
+            sources=sources,
+            path=path,
+        )
+
+    # ------------------------------------------------------------------ checks
+
+    def exists(self) -> bool:
+        return bool(self.path and self.path.is_file())
+
+    def enabled_sources(self) -> list[SourceConfig]:
+        return [s for s in self.sources.values() if s.enabled]
+
+    def problems(self) -> list[str]:
+        """Everything that would stop a run from doing useful work."""
+        issues: list[str] = []
+        if not self.exists():
+            issues.append(
+                f"No {CONFIG_NAME}. Copy {EXAMPLE_NAME} to {CONFIG_NAME} and edit it."
+            )
+            return issues
+
+        enabled = self.enabled_sources()
+        if not enabled:
+            issues.append("No job sources enabled -- nothing to search. See [sources] in the config.")
+
+        for source in enabled:
+            if source.name == "greenhouse" and not source.list_of("boards"):
+                issues.append("sources.greenhouse is enabled but lists no boards.")
+            if source.name == "lever" and not source.list_of("companies"):
+                issues.append("sources.lever is enabled but lists no companies.")
+            if source.name == "ashby" and not source.list_of("boards"):
+                issues.append("sources.ashby is enabled but lists no boards.")
+            if source.name == "adzuna" and not (source.get("app_id") and source.get("app_key")):
+                issues.append("sources.adzuna needs app_id and app_key (free at developer.adzuna.com).")
+            if source.name == "usajobs" and not (source.get("email") and source.get("api_key")):
+                issues.append("sources.usajobs needs email and api_key (free at developer.usajobs.gov).")
+
+        if self.autonomous:
+            channels = set(self.dispatch.channel_order)
+            if "email" in channels and not self.dispatch.email.enabled:
+                issues.append("dispatch.channel_order includes email but dispatch.email.enabled is false.")
+            if "ats_form" in channels and not self.dispatch.ats.enabled:
+                issues.append("dispatch.channel_order includes ats_form but dispatch.ats.enabled is false.")
+            if not channels & {"email", "ats_form"}:
+                issues.append("autonomous is on but no sending channel is configured.")
+        return issues
+
+    def warnings(self) -> list[str]:
+        out: list[str] = []
+        if self.exists() and not self.autonomous:
+            out.append(
+                "autonomous = false -- the pipeline will prepare everything and stop before "
+                "sending. Set it true in the config when you are ready."
+            )
+        if self.search.min_fit < 25:
+            out.append(
+                f"search.min_fit = {self.search.min_fit} is very low; expect weak matches "
+                "to reach the tailoring step."
+            )
+        return out

@@ -1,0 +1,34 @@
+Senior Backend Engineer, Payments Platform
+Meridian Systems - Remote (US)
+
+About the role
+We are building the payments platform that powers checkout for thousands of
+merchants. You will own backend services end to end, from design through
+on-call.
+
+What you'll do
+- Design and build high-throughput Python services handling payment
+  authorization, capture, and refunds
+- Improve the reliability and latency of the checkout path
+- Work with PostgreSQL at scale, including schema design and query tuning
+- Build event-driven integrations with third-party payment processors
+- Partner with infrastructure on Kubernetes deployments and CI/CD pipelines
+- Mentor engineers and raise the bar on code review
+
+Requirements
+- 5+ years building backend services in Python
+- Strong API design experience, ideally REST and event-driven systems
+- Production experience with PostgreSQL and Redis
+- Comfortable with Docker, Kubernetes, and modern CI/CD
+- Experience with idempotency, retries, and distributed system failure modes
+- Track record of measurable latency or reliability improvements
+
+Nice to have
+- Payments or fintech domain experience
+- Exposure to PCI DSS compliance
+- Experience with Go
+- Familiarity with Terraform and AWS
+
+Benefits
+Competitive salary, equity, medical and dental, unlimited PTO. Meridian Systems
+is an equal opportunity employer.

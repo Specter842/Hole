@@ -1,0 +1,23 @@
+# Core. Everything except optional dispatch channels works with just these.
+anthropic>=0.40
+requests>=2.31
+
+# Reading resumes and other material out of PDFs. .docx and plain text need
+# nothing extra -- .docx is unzipped and parsed with the standard library.
+pypdf>=4.0
+
+# --------------------------------------------------------------------------
+# Optional, per dispatch channel. Install only the ones you turn on in
+# config.toml -- the pipeline degrades to "queue for review" without them.
+# --------------------------------------------------------------------------
+
+# dispatch.email -- send applications from your own Gmail account.
+#   pip install google-auth google-auth-oauthlib google-api-python-client
+
+# dispatch.ats -- fill Greenhouse/Lever/Ashby forms in a real browser.
+# Also doubles as the PDF renderer for resumes, so this one earns its keep.
+#   pip install playwright
+#   playwright install chromium
+
+# Alternative PDF engine if you don't want Playwright.
+#   pip install weasyprint
