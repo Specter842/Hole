@@ -1,23 +1,26 @@
-"""Resume + cover letter generation via the Anthropic API.
+"""Resume + cover letter generation.
 
 The model is given nothing but the profile row and the achievements the matcher
 selected. It is told, in the system prompt and again in the payload, that it may
 not add facts. `verify.py` then checks the output against those same facts.
+
+Which model answers is `llm.py`'s problem, not this module's.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
-from .db import PROJECT_ROOT
+from . import llm
+from .llm import load_dotenv  # re-exported: callers have imported it from here
 
-DEFAULT_MODEL = "claude-sonnet-5"
-DEFAULT_MAX_TOKENS = 4000
+# None means "whatever provider is configured picks its own default", so the
+# model follows the provider instead of pinning one vendor's name in six places.
+DEFAULT_MODEL: str | None = None
+DEFAULT_MAX_TOKENS = llm.DEFAULT_MAX_TOKENS
 
 RESUME_MARKER = "===RESUME==="
 LETTER_MARKER = "===COVER_LETTER==="
@@ -92,22 +95,6 @@ class TailoredOutput:
         return bool(self.resume.strip() and self.cover_letter.strip())
 
 
-def load_dotenv(path: Path | None = None) -> None:
-    """Minimal .env support so the API key doesn't have to live in the shell profile."""
-    env_path = path or (PROJECT_ROOT / ".env")
-    if not env_path.is_file():
-        return
-    for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip().strip("'\"")
-        if key and key not in os.environ:
-            os.environ[key] = value
-
-
 def build_user_message(job_description: str, facts: dict[str, Any]) -> str:
     facts_json = json.dumps(facts, indent=2, ensure_ascii=False)
     return (
@@ -145,47 +132,32 @@ def call_model(
     system_prompt: str,
     user_message: str,
     *,
-    model: str = DEFAULT_MODEL,
+    model: str | None = DEFAULT_MODEL,
     max_tokens: int = DEFAULT_MAX_TOKENS,
+    provider: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    """One Anthropic call. Shared by tailoring and by document ingestion."""
-    load_dotenv()
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise GenerationError(
-            "ANTHROPIC_API_KEY is not set.\n"
-            "  PowerShell (this session): $env:ANTHROPIC_API_KEY = 'sk-ant-...'\n"
-            "  Or create a .env file next to jobsearch.db containing ANTHROPIC_API_KEY=sk-ant-..."
-        )
-    try:
-        import anthropic
-    except ImportError as exc:  # pragma: no cover - environment problem, not logic
-        raise GenerationError("The anthropic SDK is not installed. Run: pip install anthropic") from exc
+    """One model call. Shared by tailoring, outreach drafting, and ingestion.
 
-    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from the environment
+    Never returns empty text: `llm.call` raises instead, because a blank resume
+    that looks like a successful run is the worst possible outcome here.
+    """
     try:
-        response = client.messages.create(
+        return llm.call(
+            system_prompt,
+            user_message,
             model=model,
             max_tokens=max_tokens,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
+            provider=provider,
         )
-    except Exception as exc:  # SDK raises a family of API errors; surface them plainly
-        raise GenerationError(f"Anthropic API call failed: {type(exc).__name__}: {exc}") from exc
-
-    text = "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
-    usage = {
-        "input_tokens": getattr(response.usage, "input_tokens", None),
-        "output_tokens": getattr(response.usage, "output_tokens", None),
-        "stop_reason": getattr(response, "stop_reason", None),
-    }
-    return text, usage
+    except llm.ModelError as exc:
+        raise GenerationError(str(exc)) from exc
 
 
 def generate(
     job_description: str,
     plan: Any,
     *,
-    model: str = DEFAULT_MODEL,
+    model: str | None = DEFAULT_MODEL,
     max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> TailoredOutput:
     """Render a ResumePlan into documents. The plan decides what is true."""

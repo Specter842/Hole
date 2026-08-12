@@ -33,13 +33,26 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Set an API key — in the shell:
+Get a free Gemini key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) —
+no card required — and set it in the shell:
 
 ```bash
-$env:ANTHROPIC_API_KEY = "sk-ant-..."
+$env:GEMINI_API_KEY = "..."
 ```
 
-or copy `.env.example` to `.env` and fill it in (`.env` is gitignored). Then:
+or copy `.env.example` to `.env` and put it there (`.env` is gitignored).
+
+Gemini is the default because the free tier costs nothing and one pipeline run can
+tailor a dozen applications. It is **rate-limited**, not unlimited: there are per-minute
+and per-day request caps. If you'd rather use Claude, set `provider = "anthropic"` under
+`[llm]` in `config.toml` and supply `ANTHROPIC_API_KEY` instead — both paths are
+maintained and tested.
+
+```bash
+python -m jobsearch config
+```
+
+confirms which provider is active and whether it can see a key. Then:
 
 ```bash
 python -m jobsearch init
@@ -216,8 +229,10 @@ Pass `--db` *after* the final subcommand, or set `JOBSEARCH_DB`.
 python -m unittest discover -s tests -v
 ```
 
-159 tests, standard library only. No API key, no network — connectors run against
-captured response shapes and the model call is stubbed.
+189 tests. No API key, no network — connectors run against captured response shapes, and
+both model SDKs are replaced with fakes so the failure modes that matter (safety blocks,
+a thinking budget eating the token ceiling, blocked prompts) are exercised without
+spending a call.
 
 ## Layout
 
@@ -228,7 +243,8 @@ jobsearch/
   graph.py         in-memory read model, match documents
   matching.py      tokenizing, stemming, IDF scoring, coverage gaps, fit score
   retrieval.py     job description + graph -> ResumePlan
-  generate.py      prompt assembly + the Anthropic call
+  llm.py           model access: Gemini or Claude behind one call()
+  generate.py      prompt assembly, response parsing
   verify.py        post-generation grounding checks
   linking.py       attach skills to records that name them
   render.py        markdown -> print HTML -> PDF

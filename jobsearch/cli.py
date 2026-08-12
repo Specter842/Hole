@@ -20,6 +20,7 @@ from . import (
     generate,
     graph,
     linking,
+    llm,
     matching,
     pipeline,
     policy,
@@ -1018,6 +1019,8 @@ def _load_config(args: argparse.Namespace) -> Config | None:
     except ConfigError as exc:
         _err(str(exc))
         return None
+    # Publish the configured provider before anything reaches for a model.
+    config.llm.apply_to_env()
     return config
 
 
@@ -1036,6 +1039,7 @@ def cmd_config(args: argparse.Namespace) -> int:
 
     _out(f"Config: {config.path}")
     _out("")
+    _out(f"  model                 {llm.describe()}")
     _out(f"  autonomous            {config.autonomous}"
          + ("" if config.autonomous else "   <- nothing will be sent"))
     _out(f"  min_fit               {config.search.min_fit}")
@@ -1428,11 +1432,13 @@ def build_parser() -> argparse.ArgumentParser:
     q = isub.add_parser("document", parents=[common], help="a resume, review, or notes (pdf/docx/txt/md)")
     q.add_argument("path")
     q.add_argument("--hint", help="context to help extraction, e.g. 'my 2019 performance review'")
-    q.add_argument("--model", default=generate.DEFAULT_MODEL)
+    q.add_argument("--model", default=generate.DEFAULT_MODEL,
+                   help="override the model (default: the configured provider's own)")
     q.add_argument("--trust", action="store_true", help="mark extracted rows verified without review")
     q = isub.add_parser("inbox", parents=[common], help="every supported file in a folder")
     q.add_argument("path")
-    q.add_argument("--model", default=generate.DEFAULT_MODEL)
+    q.add_argument("--model", default=generate.DEFAULT_MODEL,
+                   help="override the model (default: the configured provider's own)")
     q.add_argument("--trust", action="store_true")
     p.set_defaults(func=cmd_import)
 
@@ -1509,7 +1515,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="generate a tailored resume + cover letter")
     p.add_argument("--job-url")
     p.add_argument("--source", default="manual")
-    p.add_argument("--model", default=generate.DEFAULT_MODEL)
+    p.add_argument("--model", default=generate.DEFAULT_MODEL,
+                   help="override the model (default: the configured provider's own)")
     p.add_argument("--max-tokens", type=int, default=generate.DEFAULT_MAX_TOKENS)
     p.add_argument("--out")
     p.add_argument("--dry-run", action="store_true", help="show the plan and prompt, no API call")

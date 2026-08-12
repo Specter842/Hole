@@ -108,11 +108,34 @@ class DispatchConfig:
 
 
 @dataclass
+class LlmConfig:
+    """Which model writes the documents. Empty means let `llm.py` decide."""
+
+    provider: str = ""          # "gemini" | "anthropic" | "" for auto
+    model: str = ""             # "" means the provider's own default
+    max_tokens: int = 8000
+
+    def apply_to_env(self) -> None:
+        """Publish the provider choice so `llm.resolve_provider` sees it.
+
+        The config file is the least surprising place to set this, but the
+        resolver reads the environment so that a one-off override on the command
+        line still wins. Setting it here rather than passing it through six call
+        signatures keeps the seam narrow.
+        """
+        import os
+
+        if self.provider and not os.environ.get("JOBSEARCH_LLM_PROVIDER"):
+            os.environ["JOBSEARCH_LLM_PROVIDER"] = self.provider
+
+
+@dataclass
 class Config:
     autonomous: bool = False
     search: SearchConfig = field(default_factory=SearchConfig)
     limits: LimitsConfig = field(default_factory=LimitsConfig)
     dispatch: DispatchConfig = field(default_factory=DispatchConfig)
+    llm: LlmConfig = field(default_factory=LlmConfig)
     sources: dict[str, SourceConfig] = field(default_factory=dict)
     path: Path | None = None
 
@@ -175,11 +198,17 @@ class Config:
                 enabled=bool(settings.get("enabled", False)),
                 settings={k: v for k, v in settings.items() if k != "enabled"},
             )
+        llm_config = LlmConfig(
+            provider=str(_get(raw, "llm.provider", "")).strip().lower(),
+            model=str(_get(raw, "llm.model", "")).strip(),
+            max_tokens=int(_get(raw, "llm.max_tokens", 8000)),
+        )
         return cls(
             autonomous=bool(raw.get("autonomous", False)),
             search=search,
             limits=limits,
             dispatch=dispatch,
+            llm=llm_config,
             sources=sources,
             path=path,
         )
@@ -194,7 +223,25 @@ class Config:
 
     def problems(self) -> list[str]:
         """Everything that would stop a run from doing useful work."""
+        from . import llm
+
         issues: list[str] = []
+
+        # Checked before the config-file test: without a key, tailoring fails
+        # whether or not the rest of the configuration is sound.
+        self.llm.apply_to_env()
+        try:
+            provider = llm.resolve_provider()
+        except llm.ModelError as exc:
+            issues.append(str(exc))
+        else:
+            if not llm.api_key_for(provider):
+                names = " or ".join(llm.API_KEY_ENV[provider])
+                issues.append(
+                    f"No {names} set, so nothing can be tailored. "
+                    f"{llm.KEY_HELP[provider].splitlines()[0]}"
+                )
+
         if not self.exists():
             issues.append(
                 f"No {CONFIG_NAME}. Copy {EXAMPLE_NAME} to {CONFIG_NAME} and edit it."

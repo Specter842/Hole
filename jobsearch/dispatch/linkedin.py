@@ -93,7 +93,7 @@ def draft(
     company: str = "",
     role: str = "",
     recipient_name: str = "",
-    model: str = generate.DEFAULT_MODEL,
+    model: str | None = generate.DEFAULT_MODEL,
     max_tokens: int = 1200,
 ) -> OutreachDraft:
     """Write one outreach message. Raises GenerationError if the API is unreachable."""

@@ -171,7 +171,7 @@ def extract_entities(
     text: str,
     *,
     hint: str | None = None,
-    model: str = generate.DEFAULT_MODEL,
+    model: str | None = generate.DEFAULT_MODEL,
     max_tokens: int = 8000,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     if len(text) > MAX_DOCUMENT_CHARS:
@@ -401,7 +401,7 @@ def import_document(
     path: str | Path,
     *,
     hint: str | None = None,
-    model: str = generate.DEFAULT_MODEL,
+    model: str | None = generate.DEFAULT_MODEL,
     verified: int = 0,
 ) -> DocumentReport:
     file_path = Path(path).expanduser()

@@ -1,6 +1,11 @@
 # Core. Everything except optional dispatch channels works with just these.
-anthropic>=0.40
+# Gemini is the default model provider -- free tier, rate-limited.
+google-genai>=1.0
 requests>=2.31
+
+# Only needed if you set provider = "anthropic" in config.toml. Left in because
+# the code path is maintained and tested; drop it if you never use Claude.
+anthropic>=0.40
 
 # Reading resumes and other material out of PDFs. .docx and plain text need
 # nothing extra -- .docx is unzipped and parsed with the standard library.

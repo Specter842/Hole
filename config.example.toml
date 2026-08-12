@@ -13,6 +13,28 @@
 # Sending reaches real employers under your name and cannot be undone.
 autonomous = false
 
+# ---------------------------------------------------------------- which model
+
+[llm]
+# "gemini"    free tier, rate-limited per minute and per day. The default.
+# "anthropic" paid, no free tier for the API.
+# ""          auto: whichever API key it finds, Gemini first.
+#
+# Key goes in .env (GEMINI_API_KEY=... or ANTHROPIC_API_KEY=...), never here --
+# this file is committed, .env is not.
+provider = "gemini"
+
+# "" uses the provider's default: gemini-2.5-flash / claude-sonnet-5.
+# Gemini 2.5 models think before answering, and that thinking is billed against
+# max_tokens below. If you see "hit the token ceiling before producing any
+# text", either raise max_tokens or switch to "gemini-2.0-flash", which does not
+# think.
+model = ""
+
+# One tailoring produces a resume, a cover letter, and fit notes. 8000 leaves
+# room for a thinking budget on top of that.
+max_tokens = 8000
+
 # ---------------------------------------------------------------- what to look for
 
 [search]
