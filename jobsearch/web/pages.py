@@ -11,10 +11,12 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from .. import db, graph as graph_module, llm, policy
+from .. import answers as answer_bank, db, graph as graph_module, llm, policy
 from ..config import Config
 from .html import (
     esc,
+    field,
+    form,
     form_button,
     kv,
     layout,
@@ -529,3 +531,213 @@ def runs(conn: sqlite3.Connection) -> str:
         empty="No runs recorded yet.",
     )
     return layout("Runs", body, active="/runs")
+
+
+# --------------------------------------------------------------------------- answers
+
+# The questions almost every application form asks. Offered as prompts with the
+# answers left blank -- seeding actual values would be inventing facts about the
+# candidate, which is the one thing this whole system exists not to do.
+COMMON_QUESTIONS = (
+    ("authorized to work", "Are you authorized to work in this country?", "Yes / No"),
+    ("visa sponsorship", "Do you now or will you require sponsorship?", "Yes / No"),
+    ("notice period", "What is your notice period?", "e.g. Two weeks"),
+    ("start date", "When can you start?", "e.g. Two weeks from offer"),
+    ("years of experience", "Years of relevant experience", "e.g. 8"),
+    ("how did you hear", "How did you hear about us?", "e.g. Company website"),
+    ("linkedin", "LinkedIn profile", "https://linkedin.com/in/..."),
+    ("relocate", "Are you willing to relocate?", "Yes / No"),
+    ("remote", "Are you comfortable working remotely?", "Yes"),
+    ("what city", "Which city are you based in?", "City, State, Country"),
+)
+
+
+def answers_page(conn: sqlite3.Connection, token: str) -> str:
+    """The answer bank: what forms fill from, and what is still missing.
+
+    Gaps come first. They are the questions that actually stopped an application,
+    counted, so the most expensive blank sits at the top.
+    """
+    stored = answer_bank.list_all(conn)
+    gaps = answer_bank.gaps(conn)
+
+    body = "<h1>Answers</h1>"
+    body += (
+        '<p class="muted">Forms ask things a resume does not cover. Write each answer '
+        "once here and applications fill from it. Nothing on this page is ever "
+        "generated -- what you type is exactly what gets submitted.</p>"
+    )
+
+    if gaps:
+        rows = ""
+        for gap in gaps:
+            question = str(gap.get("question") or "")
+            scope = f" &middot; {esc(gap['company'])}" if gap.get("company") else ""
+            rows += (
+                '<div class="answer-row"><div style="flex:1">'
+                f'<div><span class="count">{int(gap.get("seen_count") or 1)}&times;</span> '
+                f"{esc(question)}{scope}</div>"
+                + form(
+                    "/answers/add",
+                    token,
+                    field("pattern", "", question[:60], placeholder="question to match")
+                    + field("answer", "", "", placeholder="your answer"),
+                    "Answer it",
+                )
+                + "</div></div>"
+            )
+        body += (
+            '<div class="card">'
+            "<h2>Blocking your applications</h2>"
+            '<p class="muted">These stopped a real application. Answer one and it is '
+            "covered on every future posting that asks it.</p>" + rows + "</div>"
+        )
+
+    if stored:
+        rows = ""
+        for item in stored:
+            scope = f' <span class="muted">&middot; {esc(item.company)}</span>' if item.company else ""
+            rows += (
+                '<div class="answer-row"><div>'
+                f'<div class="pattern">{esc(item.pattern)}{scope}</div>'
+                f'<div class="value">{esc(item.answer)}</div></div>'
+                + form_button(f"/answers/{item.id}/delete", "Delete", token, style="danger")
+                + "</div>"
+            )
+        body += f'<div class="card"><h2>Stored ({len(stored)})</h2>{rows}</div>'
+
+    known = {a.pattern for a in stored}
+    suggestions = [q for q in COMMON_QUESTIONS if q[0] not in known]
+    if suggestions:
+        rows = ""
+        for pattern, label, hint in suggestions:
+            rows += (
+                '<div class="answer-row"><div style="flex:1">'
+                + form(
+                    "/answers/add",
+                    token,
+                    f'<input type="hidden" name="pattern" value="{esc(pattern)}">'
+                    + field("answer", label, "", hint=hint, placeholder=hint),
+                    "Save",
+                )
+                + "</div></div>"
+            )
+        body += (
+            '<div class="card"><h2>Common questions</h2>'
+            '<p class="muted">Filling these in covers most application forms. '
+            "Skip any that do not apply to you.</p>" + rows + "</div>"
+        )
+
+    body += (
+        '<div class="card"><h2>Add your own</h2>'
+        + form(
+            "/answers/add",
+            token,
+            '<div class="grid2">'
+            + field(
+                "pattern", "Question contains", "", placeholder="visa sponsorship",
+                hint="Matched against the form's question, case-insensitive.",
+            )
+            + field(
+                "company", "Only for company (optional)", "", placeholder="Anthropic",
+                hint="Leave blank to use for every employer.",
+            )
+            + "</div>"
+            + field(
+                "answer", "Answer", "", kind="textarea",
+                placeholder="Exactly what should be entered",
+            ),
+            "Add answer",
+        )
+        + "</div>"
+    )
+    return layout("Answers", body, active="/answers")
+
+
+# --------------------------------------------------------------------------- profile editor
+
+PROFILE_FIELDS = (
+    ("full_name", "Full name", "text", "As it should appear on applications."),
+    ("email", "Email", "email", ""),
+    ("phone", "Phone", "tel", "Include country code if applying internationally."),
+    ("location", "Location", "text", "City, State, Country."),
+    ("headline", "Headline", "text", "e.g. Senior Backend Engineer."),
+    ("linkedin_url", "LinkedIn", "url", ""),
+    ("github", "GitHub", "url", ""),
+    ("website", "Website / portfolio", "url", ""),
+    (
+        "work_authorization", "Work authorization", "text",
+        "e.g. US citizen, or Requires H-1B sponsorship.",
+    ),
+)
+
+
+def profile_edit(conn: sqlite3.Connection, token: str) -> str:
+    """Every field a form might ask for, in one place.
+
+    These are the values typed straight into applications, so this page is the
+    difference between a form that completes and one that stops halfway.
+    """
+    current = db.get_profile(conn)
+    known = {name for name, _label, _kind, _hint in PROFILE_FIELDS}
+    extra = {
+        key: value
+        for key, value in current.items()
+        if key not in known and key not in ("updated_at", "summary")
+    }
+
+    core = "".join(
+        field(name, label, current.get(name, ""), kind=kind, hint=hint)
+        for name, label, kind, hint in PROFILE_FIELDS
+    )
+    body = "<h1>Your details</h1>"
+    body += (
+        '<p class="muted">What gets typed into application forms. Anything blank here '
+        "is a field an application can stop on.</p>"
+    )
+    missing = [label for name, label, _k, _h in PROFILE_FIELDS if not current.get(name)]
+    if missing:
+        body += notice("Not filled in yet", missing, tone="warn")
+
+    body += (
+        '<div class="card">'
+        + form(
+            "/profile/save",
+            token,
+            f'<div class="grid2">{core}</div>'
+            + field(
+                "summary", "Summary", current.get("summary", ""), kind="textarea", rows=4,
+                hint="A few lines about you. Used for tone, never copied verbatim.",
+            ),
+            "Save details",
+        )
+        + "</div>"
+    )
+
+    if extra:
+        rows = "".join(
+            '<div class="answer-row"><div>'
+            f'<div class="pattern">{esc(key)}</div>'
+            f'<div class="value">{esc(value)}</div></div>'
+            + form_button(f"/profile/attr/{key}/delete", "Delete", token, style="danger")
+            + "</div>"
+            for key, value in sorted(extra.items())
+        )
+        body += f'<div class="card"><h2>Other details</h2>{rows}</div>'
+
+    body += (
+        '<div class="card"><h2>Add anything else</h2>'
+        '<p class="muted">Pronouns, clearance level, salary floor, visa status -- '
+        "anything a form might ask that has no box above.</p>"
+        + form(
+            "/profile/save",
+            token,
+            '<div class="grid2">'
+            + field("key", "Name", "", placeholder="security_clearance")
+            + field("value", "Value", "", placeholder="Secret, active")
+            + "</div>",
+            "Add detail",
+        )
+        + "</div>"
+    )
+    return layout("Your details", body, active="/profile")

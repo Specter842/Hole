@@ -19,6 +19,7 @@ NAV = (
     ("/jobs", "Jobs"),
     ("/queue", "Queue"),
     ("/profile", "Profile"),
+    ("/answers", "Answers"),
     ("/review", "Review"),
     ("/runs", "Runs"),
 )
@@ -130,6 +131,37 @@ ul.tight li { margin: 3px 0; }
 .kv { display: grid; grid-template-columns: 150px 1fr; gap: 4px 14px; font-size: 14px; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; }
+
+/* -- forms -------------------------------------------------------------- */
+form.stack { display: flex; flex-direction: column; gap: 14px; }
+label.field { display: flex; flex-direction: column; gap: 5px; }
+label.field > span { font-size: 13px; font-weight: 600; color: var(--muted); }
+input[type=text], input[type=email], input[type=url], input[type=tel],
+textarea, select {
+  width: 100%; padding: 9px 11px; font: inherit;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 7px;
+}
+input:focus, textarea:focus, select:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(42,109,244,.16);
+}
+textarea { resize: vertical; min-height: 68px; font-family: inherit; }
+.field .hint { font-size: 12px; color: var(--muted); }
+.actions { display: flex; gap: 10px; align-items: center; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 18px; margin: 14px 0;
+}
+.card h2 { margin-top: 0; }
+.answer-row {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 14px;
+  padding: 11px 0; border-bottom: 1px solid var(--border);
+}
+.answer-row:last-child { border-bottom: none; }
+.answer-row .pattern { font-family: var(--mono); font-size: 13px; }
+.answer-row .value { color: var(--muted); font-size: 14px; margin-top: 2px; }
+.count { font-family: var(--mono); color: var(--warn); font-weight: 600; }
 """
 
 
@@ -208,6 +240,51 @@ def form_button(
         f'<form method="post" action="{esc(action)}" class="inline">'
         f'<input type="hidden" name="token" value="{esc(token)}">'
         f'<button class="{esc(style)}"{onclick}>{esc(label)}</button></form>'
+    )
+
+
+def field(
+    name: str,
+    label: str,
+    value: Any = "",
+    *,
+    kind: str = "text",
+    hint: str = "",
+    placeholder: str = "",
+    rows: int = 3,
+    options: Sequence[str] = (),
+) -> str:
+    """One labelled input. `value` is escaped -- it may be text a board supplied."""
+    ident = f"f_{esc(name)}"
+    note = f'<span class="hint">{esc(hint)}</span>' if hint else ""
+    if kind == "textarea":
+        control = (
+            f'<textarea id="{ident}" name="{esc(name)}" rows="{int(rows)}" '
+            f'placeholder="{esc(placeholder)}">{esc(value)}</textarea>'
+        )
+    elif kind == "select":
+        picked = str(value or "")
+        choices = "".join(
+            f'<option value="{esc(o)}"{" selected" if str(o) == picked else ""}>{esc(o)}</option>'
+            for o in options
+        )
+        control = f'<select id="{ident}" name="{esc(name)}">{choices}</select>'
+    else:
+        control = (
+            f'<input id="{ident}" name="{esc(name)}" type="{esc(kind)}" '
+            f'value="{esc(value)}" placeholder="{esc(placeholder)}">'
+        )
+    return f'<label class="field" for="{ident}"><span>{esc(label)}</span>{control}{note}</label>'
+
+
+def form(action: str, token: str, body: str, submit: str = "Save", *, cls: str = "") -> str:
+    """A POST form carrying the session token. Mutations only ever arrive this way."""
+    return (
+        f'<form method="post" action="{esc(action)}" class="stack {esc(cls)}">'
+        f'<input type="hidden" name="token" value="{esc(token)}">'
+        f"{body}"
+        f'<div class="actions"><button class="primary">{esc(submit)}</button></div>'
+        f"</form>"
     )
 
 

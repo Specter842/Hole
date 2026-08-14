@@ -255,38 +255,206 @@ def _label_query(question: str) -> str:
     return re.sub(r"[\s*:?]+$", "", str(question or "").strip()).strip()
 
 
-def _answer_field(page: Any, question: str, value: str) -> bool:
-    """Put a stored answer into the field labelled `question`.
+TRUTHY = {"yes", "y", "true", "1", "on", "checked", "i agree", "agree", "accept"}
 
-    Handles the three shapes an application question actually takes: a text box,
-    a textarea, and a dropdown. Anything else is left alone rather than poked at.
+
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", str(text or "")).strip().lower()
+
+
+def _match_option(value: str, options: list[str]) -> str | None:
+    """Which offered option a stored answer designates, or None if unclear.
+
+    Refusing when the answer matches two options is the point. "Yes" against
+    ["Yes", "Yes, with conditions"] is genuinely ambiguous, and picking either
+    one puts a claim on an application that the candidate did not make. An
+    unfilled field stops the run; a wrongly filled one gets submitted.
+    """
+    target = _norm(value)
+    if not target or not options:
+        return None
+    exact = [o for o in options if _norm(o) == target]
+    if exact:
+        return exact[0]
+    for test in (
+        lambda o: _norm(o).startswith(target),
+        lambda o: target in _norm(o),
+    ):
+        hits = [o for o in options if test(o)]
+        if len(hits) == 1:
+            return hits[0]
+    return None
+
+
+def _fill_combobox(page: Any, element: Any, value: str) -> bool:
+    """Open a React combobox, type, and click the option the answer designates.
+
+    Only ever clicks an option whose visible text unambiguously matches the
+    stored answer, so a filtered listbox that comes back with several plausible
+    rows is left alone rather than guessed at.
+    """
+    try:
+        element.click()
+        page.wait_for_timeout(250)
+        # Typed, not filled. Location autocompletes query a places service on
+        # each keystroke, and `fill()` sets the value without firing the key
+        # events that trigger the search -- the listbox never opens.
+        try:
+            element.type(value, delay=30)
+        except Exception:
+            element.fill(value)
+        page.wait_for_timeout(900)
+
+        options = page.locator('[role="option"]:visible')
+        count = min(options.count(), 40)
+        if not count:
+            page.keyboard.press("Escape")
+            return False
+        texts = []
+        for index in range(count):
+            try:
+                texts.append(options.nth(index).inner_text())
+            except Exception:
+                texts.append("")
+        choice = _match_option(value, [t for t in texts if t])
+        if choice is None:
+            page.keyboard.press("Escape")
+            return False
+        options.nth(texts.index(choice)).click()
+        page.wait_for_timeout(400)
+        return True
+    except Exception:
+        try:
+            page.keyboard.press("Escape")
+        except Exception:
+            pass
+        return False
+
+
+def _fill_element(page: Any, field: dict[str, Any], value: str) -> bool:
+    """Fill one blocking field, addressed by the ref stamped on it.
+
+    `[data-jobsearch-ref=...]` resolves to exactly the element the scan found
+    empty, so there is no question of which "Country" box this is.
     """
     if not value:
         return False
-    try:
-        locator = page.get_by_label(_label_query(question), exact=False)
-        count = locator.count()
-    except Exception:
+    ref = str(field.get("ref") or "")
+    kind = str(field.get("kind") or "text")
+    options = [str(o) for o in (field.get("options") or [])]
+    if not ref:
         return False
-    for index in range(min(count, 5)):
-        try:
-            element = locator.nth(index)
-            if not element.is_visible():
-                continue
-            tag = str(element.evaluate("e => e.tagName") or "").lower()
-            if tag == "select":
-                try:
-                    element.select_option(label=value)
-                except Exception:
-                    element.select_option(value)
-                return True
-            if (element.input_value() or "").strip():
-                continue
+    try:
+        located = page.locator(f'[data-jobsearch-ref="{ref}"]')
+        if located.count() != 1:
+            return False
+        element = located.first
+
+        if kind in ("text", "textarea"):
             element.fill(value)
             return True
+
+        if kind == "select":
+            choice = _match_option(value, options)
+            if choice is None:
+                return False
+            try:
+                element.select_option(label=choice)
+            except Exception:
+                element.select_option(choice)
+            return True
+
+        if kind == "checkbox":
+            if _norm(value) not in TRUTHY:
+                return False  # never untick something on someone's behalf
+            element.check()
+            return True
+
+        if kind == "radio":
+            choice = _match_option(value, options)
+            if choice is None:
+                return False
+            picked = element.evaluate(
+                """(node, wanted) => {
+                    const clean = s => (s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                    const group = node.name
+                        ? [...document.getElementsByName(node.name)]
+                        : [node];
+                    const hit = group.find(r => {
+                        const own = r.labels && r.labels[0] ? r.labels[0].innerText : r.value;
+                        return clean(own) === clean(wanted);
+                    });
+                    if (!hit) return false;
+                    hit.setAttribute('data-jobsearch-pick', '1');
+                    return true;
+                }""",
+                choice,
+            )
+            if not picked:
+                return False
+            target = page.locator('[data-jobsearch-pick="1"]').first
+            target.check()
+            page.evaluate(
+                "() => document.querySelectorAll('[data-jobsearch-pick]')"
+                ".forEach(n => n.removeAttribute('data-jobsearch-pick'))"
+            )
+            return True
+
+        if kind == "combobox":
+            return _fill_combobox(page, element, value)
+    except Exception:
+        return False
+    return False
+
+
+ATTACH_BUTTONS = ("Attach", "Upload", "Attach resume", "Upload resume", "Choose file")
+
+
+def _upload_resume(page: Any, ats: str, resume_path: Path) -> bool:
+    """Attach the resume, by whichever route this board actually accepts.
+
+    Setting files straight onto the hidden input works on classic boards. Newer
+    React boards ignore it -- the input is replaced on re-render and the file
+    never registers -- so fall back to driving the visible "Attach" button and
+    answering the file chooser it opens, which is what a person does.
+    """
+    for selector in RESUME_SELECTORS.get(ats, []):
+        try:
+            locator = page.locator(selector)
+            if locator.count() >= 1:
+                locator.first.set_input_files(str(resume_path))
+                page.wait_for_timeout(1500)
+                if _resume_attached(page):
+                    return True
+        except Exception:
+            continue
+
+    for name in ATTACH_BUTTONS:
+        try:
+            button = page.get_by_role("button", name=name).first
+            if not button.is_visible():
+                continue
+            with page.expect_file_chooser(timeout=5000) as chooser:
+                button.click()
+            chooser.value.set_files(str(resume_path))
+            page.wait_for_timeout(2000)
+            if _resume_attached(page):
+                return True
         except Exception:
             continue
     return False
+
+
+def _resume_attached(page: Any) -> bool:
+    try:
+        return bool(
+            page.evaluate(
+                "() => [...document.querySelectorAll('input[type=file]')]"
+                ".some(f => f.files && f.files.length > 0)"
+            )
+        )
+    except Exception:
+        return False
 
 
 def _settle_after_upload(page: Any) -> None:
@@ -315,18 +483,28 @@ def _has_captcha(page: Any) -> bool:
     return False
 
 
-def _unfilled_required(page: Any) -> list[str]:
-    """Required inputs still empty after our pass, excluding ones we won't answer.
+def _blocking_fields(page: Any) -> list[dict[str, Any]]:
+    """Required inputs still empty after our pass, each tagged so it can be filled.
 
-    Naming these well is the whole value of the check. Whatever is left here is
-    what a human has to go and finish by hand, and "(unnamed)" sends them to a
-    screenshot to play spot-the-difference. Modern React form kits -- including
-    Greenhouse's current board -- render required inputs with no name, no id, no
-    label and no aria-label, so the fallbacks below walk outward through the DOM
-    looking for any text a person would recognize.
+    Two jobs. First, name each one well: whatever is left here is what a human
+    would otherwise finish by hand, and "(unnamed)" sends them to a screenshot to
+    play spot-the-difference. Modern React form kits -- including Greenhouse's
+    current board -- render required inputs with no name, no id, no label and no
+    aria-label, so the fallbacks below walk outward through the DOM looking for
+    any text a person would recognize.
+
+    Second, and the reason this returns dicts rather than strings: it stamps
+    `data-jobsearch-ref` on each element. Filling then addresses that attribute
+    and hits exactly one node. Searching by label text instead is ambiguous in
+    ways that matter -- on Figma's live form `get_by_label("Country")` matches
+    three widgets, and the first is the phone country-code prefix. Writing "United
+    States" into that and submitting would put a wrong answer on a real
+    application. An element reference cannot be wrong about which field it is.
+
+    Radio groups collapse to one entry per group, since a group is one question.
     """
     try:
-        return page.evaluate(
+        found = page.evaluate(
             """() => {
                 const skip = /gender|race|ethnic|veteran|disability|orientation|pronoun|self.?identif|voluntary|hispanic/i;
                 const clean = s => (s || '').replace(/\\s+/g, ' ').trim();
@@ -361,23 +539,195 @@ def _unfilled_required(page: Any) -> list[str]:
                     return `unlabelled ${el.type || el.tagName.toLowerCase()} field #${index + 1}`;
                 };
 
+                // What sort of widget this is, which decides how it gets filled.
+                const kindOf = el => {
+                    const tag = el.tagName.toLowerCase();
+                    if (tag === 'select') return 'select';
+                    if (tag === 'textarea') return 'textarea';
+                    if (el.type === 'file') return 'file';
+                    if (el.type === 'radio') return 'radio';
+                    if (el.type === 'checkbox') return 'checkbox';
+                    // React combobox kits: a text input that opens a listbox.
+                    const role = (el.getAttribute('role') || '').toLowerCase();
+                    if (role === 'combobox') return 'combobox';
+                    if (el.getAttribute('aria-autocomplete')) return 'combobox';
+                    if (el.getAttribute('aria-haspopup') === 'listbox') return 'combobox';
+                    return 'text';
+                };
+
+                // A combobox can hold a selection without its input carrying the
+                // text -- react-select paints the chosen value into a sibling
+                // node. Treating that as empty would refill an answered field.
+                //
+                // Walking up from the parent matters: the input's own class is
+                // `select__input`, so `closest('[class*=select]')` matches the
+                // input itself and finds nothing inside it.
+                const comboFilled = el => {
+                    if (el.value) return true;
+                    let node = el.parentElement;
+                    for (let depth = 0; node && depth < 5; depth++, node = node.parentElement) {
+                        const shown = node.querySelector(
+                            '[class*="singleValue"], [class*="multiValue"]'
+                        );
+                        if (shown && clean(shown.innerText)) return true;
+                    }
+                    return false;
+                };
+
+                // Identity of the field wrapper an input sits in. Two inputs in
+                // the same wrapper are one question rendered twice (a combobox
+                // and the hidden mirror that carries its value on submit); two
+                // inputs in different wrappers are different questions even when
+                // they describe identically. On Figma's form the phone dial-code
+                // selector and the real Country field both describe as
+                // "Country", and merging them threw away the one that mattered.
+                let groupSeq = 0;
+                const groupOf = (el, index) => {
+                    let node = el.parentElement;
+                    for (let depth = 0; node && depth < 6; depth++, node = node.parentElement) {
+                        const cls = (node.className || '').toString();
+                        if (/select-shell|form-group|field|question|input-wrapper/i.test(cls)) {
+                            if (!node.getAttribute('data-jobsearch-group')) {
+                                node.setAttribute('data-jobsearch-group', 'g' + (++groupSeq));
+                            }
+                            return node.getAttribute('data-jobsearch-group');
+                        }
+                    }
+                    return 'solo' + index;   // no wrapper found: never merge it
+                };
+
+                // An upload widget tracks its state in a hidden text input that
+                // stays empty even once a file is attached, so the raw value
+                // check reports an attached resume as still missing. If a file
+                // input anywhere in this field's group holds a file, the field
+                // is answered whatever its mirror says.
+                const hasAttachment = el => {
+                    let node = el.parentElement;
+                    for (let depth = 0; node && depth < 6; depth++, node = node.parentElement) {
+                        const files = [...node.querySelectorAll('input[type=file]')];
+                        if (files.some(f => f.files && f.files.length > 0)) return true;
+                    }
+                    return false;
+                };
+
+                const isEmpty = (el, kind) => {
+                    if (kind === 'file') return el.files.length === 0;
+                    if (kind === 'checkbox') return !el.checked;
+                    if (kind === 'radio') {
+                        // One question, not N. Empty only if nothing in the group
+                        // is selected.
+                        if (!el.name) return !el.checked;
+                        const group = document.getElementsByName(el.name);
+                        return ![...group].some(r => r.checked);
+                    }
+                    if (kind === 'combobox') return !comboFilled(el);
+                    if (el.value) return false;
+                    return !hasAttachment(el);
+                };
+
+                // The choices a radio group or native select offers, so the
+                // caller can match a stored answer against them.
+                const optionsFor = (el, kind) => {
+                    if (kind === 'select') {
+                        return [...el.options]
+                            .map(o => clean(o.innerText || o.value))
+                            .filter(t => t && t !== '--');
+                    }
+                    if (kind === 'radio' && el.name) {
+                        return [...document.getElementsByName(el.name)]
+                            .map(r => {
+                                const own = r.labels && r.labels[0] ? r.labels[0].innerText : '';
+                                return clean(own) || clean(r.value);
+                            })
+                            .filter(Boolean);
+                    }
+                    return [];  // combobox options do not exist until it opens
+                };
+
                 const out = [];
+                const seenGroups = new Set();
                 const all = document.querySelectorAll(
                     'input[required], select[required], textarea[required], ' +
                     '[aria-required="true"]'
                 );
                 [...all].forEach((el, index) => {
                     if (el.type === 'hidden' || el.disabled) return;
+                    if (el.offsetParent === null && el.type !== 'file') return;
+
+                    const kind = kindOf(el);
+                    // Radios in one group are a single question; keep the first.
+                    if (kind === 'radio' && el.name) {
+                        if (seenGroups.has(el.name)) return;
+                        seenGroups.add(el.name);
+                    }
                     const label = describe(el, index);
                     if (skip.test(label)) return;
-                    const empty = el.type === 'file' ? el.files.length === 0 : !el.value;
-                    if (empty) out.push(label.slice(0, 70));
+                    if (!isEmpty(el, kind)) return;
+
+                    const ref = 'jsf' + index;
+                    el.setAttribute('data-jobsearch-ref', ref);
+                    out.push({
+                        ref: ref,
+                        group: groupOf(el, index),
+                        label: label.slice(0, 120),
+                        kind: kind,
+                        options: optionsFor(el, kind).slice(0, 60)
+                    });
                 });
                 return out;
             }"""
         )
+        return _dedupe_fields([dict(f) for f in (found or [])])
     except Exception:
         return []
+
+
+# How interactive a widget is. When one question surfaces twice, the higher
+# number is the thing a person actually operates.
+_KIND_RANK = {
+    "text": 0,
+    "textarea": 1,
+    "file": 2,
+    "checkbox": 3,
+    "radio": 4,
+    "select": 5,
+    "combobox": 6,
+}
+
+
+def _dedupe_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One entry per question.
+
+    React combobox kits render two required inputs per question: the visible
+    widget, and a hidden mirror input that carries the value on submit. Both
+    look empty and both are `aria-required`, so a raw scan reports "Country" as
+    two separate blockers and typing into the mirror would do nothing. Keep the
+    widget -- the one with the higher interaction rank -- and drop its shadow.
+
+    Merging is keyed on the DOM wrapper, never on the label. Label text is not a
+    reliable identity: on Figma's form the phone dial-code selector and the
+    country field both resolve to "Country", and collapsing them by name
+    discarded the real country field while keeping the phone prefix.
+    """
+    best: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for index, field in enumerate(fields):
+        key = str(field.get("group") or "") or f"solo{index}"
+        if not _norm(str(field.get("label") or "")):
+            continue
+        rank = _KIND_RANK.get(str(field.get("kind") or "text"), 0)
+        current = best.get(key)
+        if current is None:
+            best[key] = field
+            order.append(key)
+        elif rank > _KIND_RANK.get(str(current.get("kind") or "text"), 0):
+            best[key] = field
+    return [best[key] for key in order]
+
+
+def _unfilled_required(page: Any) -> list[str]:
+    """Just the labels of what is still blocking. Kept for reporting."""
+    return [str(field.get("label") or "") for field in _blocking_fields(page)]
 
 
 def submit(
@@ -463,15 +813,8 @@ def submit(
             # parser runs first and the values below overwrite it -- the record
             # in the database wins over a guess made from a PDF.
             if fields.resume_path:
-                for selector in RESUME_SELECTORS.get(ats, []):
-                    try:
-                        locator = page.locator(selector)
-                        if locator.count() >= 1:
-                            locator.first.set_input_files(str(fields.resume_path))
-                            filled.append("resume")
-                            break
-                    except Exception:
-                        continue
+                if _upload_resume(page, ats, Path(fields.resume_path)):
+                    filled.append("resume")
                 _settle_after_upload(page)
 
             for selector, attribute in FIELD_MAP.get(ats, []):
@@ -506,20 +849,38 @@ def submit(
                     artifacts=artifacts,
                 )
 
-            outstanding = _unfilled_required(page)
+            blocking = _blocking_fields(page)
 
             # Whatever is left is a question the resume cannot answer: work
             # authorization, notice period, why-this-company. If the candidate
             # has written an answer down, use it verbatim. If not, this run
             # stops -- inventing a "no" to a sponsorship question would be a lie
             # told to an employer under their name.
-            if outstanding and answer_lookup is not None:
-                for question in list(outstanding):
-                    stored = answer_lookup(question)
-                    if stored and _answer_field(page, question, stored):
-                        filled.append(f"answered: {question[:40]}")
+            #
+            # Several passes, because answering one question can reveal another:
+            # forms routinely unhide a follow-up ("if yes, explain") once the
+            # first is set. Each pass rescans, so a newly appeared required field
+            # gets the same treatment instead of being submitted empty.
+            if answer_lookup is not None:
+                for _pass in range(3):
+                    if not blocking:
+                        break
+                    progressed = False
+                    for field in blocking:
+                        stored = answer_lookup(str(field.get("label") or ""))
+                        if stored and _fill_element(page, field, stored):
+                            filled.append(f"answered: {str(field.get('label'))[:40]}")
+                            progressed = True
+                    if not progressed:
+                        break
+                    page.wait_for_timeout(400)
+                    blocking = _blocking_fields(page)
                 _screenshot(page, screenshot)
-                outstanding = _unfilled_required(page)
+
+            # The authoritative check: rescan rather than trusting that each fill
+            # took. A combobox that silently rejected a value must not be counted
+            # as answered just because the click did not raise.
+            outstanding = [str(f.get("label") or "") for f in _blocking_fields(page)]
 
             if outstanding:
                 browser.close()

@@ -27,7 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
-from .. import db, generate, graph as graph_module, pipeline, retrieval, verify
+from .. import answers, db, generate, graph as graph_module, pipeline, retrieval, verify
 from ..config import Config
 from . import pages
 from .html import esc, layout
@@ -94,6 +94,10 @@ class App:
                 return (200, html) if html else _page("No such application", f"Application {parts[1]} does not exist.", 404)
             if parts == ["profile"]:
                 return 200, pages.profile(conn)
+            if parts == ["profile", "edit"]:
+                return 200, pages.profile_edit(conn, self.token)
+            if parts == ["answers"]:
+                return 200, pages.answers_page(conn, self.token)
             if parts == ["review"]:
                 return 200, pages.review(conn, self.token)
             if parts == ["runs"]:
@@ -122,11 +126,70 @@ class App:
                 return self._decide(conn, int(parts[1]), parts[2])
             if len(parts) == 4 and parts[0] == "review" and parts[3] == "verify":
                 return self._verify_row(conn, parts[1], parts[2])
+            if parts == ["answers", "add"]:
+                return self._add_answer(conn, fields)
+            if len(parts) == 3 and parts[0] == "answers" and parts[1].isdigit() and parts[2] == "delete":
+                answers.remove(conn, int(parts[1]))
+                conn.commit()
+                return 303, "/answers"
+            if parts == ["profile", "save"]:
+                return self._save_profile(conn, fields)
+            if len(parts) == 4 and parts[0] == "profile" and parts[1] == "attr" and parts[3] == "delete":
+                db.delete_profile_field(conn, parts[2])
+                conn.commit()
+                return 303, "/profile/edit"
             return _page("Not found", f"No action at {path}", 404)
         finally:
             conn.close()
 
     # ------------------------------------------------------------------ actions
+
+    def _add_answer(self, conn: sqlite3.Connection, fields: dict[str, str]) -> tuple[int, str]:
+        """Store one standing answer.
+
+        A blank answer is a no-op rather than an error: the page renders a dozen
+        suggested questions at once, and submitting the one you filled in should
+        not complain about the eleven you skipped.
+        """
+        answer = (fields.get("answer") or "").strip()
+        pattern = (fields.get("pattern") or "").strip()
+        if not answer or not pattern:
+            return 303, "/answers"
+        try:
+            answers.add(
+                conn, pattern, answer,
+                company=(fields.get("company") or "").strip() or None,
+            )
+            answers.prune_answered(conn)
+            conn.commit()
+        except ValueError as exc:
+            return _page("Not stored", str(exc), 400)
+        return 303, "/answers"
+
+    def _save_profile(self, conn: sqlite3.Connection, fields: dict[str, str]) -> tuple[int, str]:
+        """Write the profile form back.
+
+        Two shapes post here: the main editor, which sends one key per column,
+        and the "add anything else" box, which sends a key/value pair. Blank
+        values are skipped rather than written, so submitting the editor with
+        empty optional boxes does not wipe fields set elsewhere.
+        """
+        custom_key = (fields.get("key") or "").strip()
+        if custom_key:
+            value = (fields.get("value") or "").strip()
+            if value:
+                db.set_profile_field(conn, custom_key, value)
+                conn.commit()
+            return 303, "/profile/edit"
+
+        for name, value in fields.items():
+            if name in ("token", "key", "value"):
+                continue
+            if not str(value).strip():
+                continue
+            db.set_profile_field(conn, name, str(value))
+        conn.commit()
+        return 303, "/profile/edit"
 
     def _decide(self, conn: sqlite3.Connection, app_id: int, action: str) -> tuple[int, str]:
         app = db.get_application(conn, app_id)

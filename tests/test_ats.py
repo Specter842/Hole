@@ -50,6 +50,29 @@ class FakeElement:
     def click(self) -> None:
         self.clicked = True
 
+    def check(self) -> None:
+        self.clicked = True
+        self.value = "checked"
+
+    def select_option(self, value: str = "", label: str = "") -> None:
+        if not self._visible:
+            raise RuntimeError("not visible")
+        self.value = label or value
+
+    def inner_text(self) -> str:
+        return self.value
+
+    def type(self, value: str, **_kwargs: object) -> None:
+        self.value = value
+
+    def evaluate(self, script: str, *args: object) -> object:
+        if "tagName" in script:
+            return "INPUT"
+        # The radio-group picker reports whether it found a matching radio.
+        if "data-jobsearch-pick" in script:
+            return bool(args)
+        return None
+
 
 class FakeLocator:
     def __init__(self, elements: list[FakeElement]) -> None:
@@ -107,8 +130,28 @@ class FakePage:
     def get_by_label(self, label: str, **_kwargs: object) -> FakeLocator:
         return FakeLocator(self.labels.get(label, []))
 
-    def evaluate(self, _script: str) -> list[str]:
-        return self.required
+    def evaluate(self, script: str, *_args: object) -> object:
+        if "removeAttribute" in script:
+            return None
+        # `required` may be given as plain labels (the common case in these
+        # tests) or as full field descriptors when a test cares about widget
+        # kind or the options a question offers.
+        out = []
+        for index, item in enumerate(self.required):
+            if isinstance(item, dict):
+                out.append({"ref": f"jsf{index}", "kind": "text", "options": [], **item})
+            else:
+                out.append(
+                    {"ref": f"jsf{index}", "label": item, "kind": "text", "options": []}
+                )
+        return out
+
+    @property
+    def keyboard(self) -> "FakePage":
+        return self
+
+    def press(self, _key: str) -> None:
+        pass
 
     def screenshot(self, path: str, **_kwargs: object) -> None:
         Path(path).write_bytes(b"png")
