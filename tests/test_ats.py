@@ -103,6 +103,7 @@ class FakePage:
         self.selectors = selectors or {}
         self.labels = labels or {}
         self.required = required or []
+        self.texts: dict[str, list[FakeElement]] = {}
         self.order: list[str] = []  # what happened, in sequence
 
     # -- navigation ------------------------------------------------------
@@ -130,9 +131,22 @@ class FakePage:
     def get_by_label(self, label: str, **_kwargs: object) -> FakeLocator:
         return FakeLocator(self.labels.get(label, []))
 
+    def get_by_text(self, text: str, **_kwargs: object) -> FakeLocator:
+        return FakeLocator(self.texts.get(text, []))
+
     def evaluate(self, script: str, *_args: object) -> object:
         if "removeAttribute" in script:
             return None
+        # The blocking-field scan is recognised by the attribute it stamps. It
+        # has to be matched before the file-input branch below, because that
+        # scan now mentions input[type=file] too when deciding whether an
+        # upload field is satisfied.
+        if "data-jobsearch-ref" not in script and "input[type=file]" in script:
+            return any(
+                element.files
+                for elements in self.selectors.values()
+                for element in elements
+            )
         # `required` may be given as plain labels (the common case in these
         # tests) or as full field descriptors when a test cares about widget
         # kind or the options a question offers.
@@ -241,7 +255,11 @@ class AtsSubmitTests(unittest.TestCase):
         # job-boards.greenhouse.io is where Greenhouse actually serves the form.
         page = FakePage(
             lands_on="https://job-boards.greenhouse.io/acme/jobs/9",
-            selectors={"#first_name": [FakeElement()], "#email": [FakeElement()]},
+            selectors={
+                "#first_name": [FakeElement()],
+                "#email": [FakeElement()],
+                "#resume": [FakeElement()],
+            },
         )
         result = self._submit(page)
         self.assertTrue(result.ok, result.detail)
@@ -291,8 +309,15 @@ class AtsSubmitTests(unittest.TestCase):
 
     def test_dry_run_never_clicks_submit(self) -> None:
         button = FakeElement()
+        # A resume input is part of a realistic form: these fields carry a
+        # resume, and the run now refuses to report success unless the upload
+        # is still there at the end.
         page = FakePage(
-            selectors={"#first_name": [FakeElement()], "#submit_app": [button]},
+            selectors={
+                "#first_name": [FakeElement()],
+                "#resume": [FakeElement()],
+                "#submit_app": [button],
+            },
         )
         result = self._submit(page)
         self.assertTrue(result.ok)

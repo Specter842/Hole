@@ -283,7 +283,11 @@ def _read_bundle(resume_version: str | None) -> dict[str, str]:
         return {}
     folder = Path(resume_version)
     if not folder.is_absolute():
-        folder = db.PROJECT_ROOT / folder
+        # `resume_version` holds a bare bundle name, and bundles are written to
+        # <project>/output/<name> -- which is what every other reader assumes.
+        # Resolving it against the project root instead pointed one directory
+        # too high, so the UI reported documents missing that were on disk.
+        folder = db.PROJECT_ROOT / "output" / folder
     out: dict[str, str] = {}
     for name in ("resume.md", "cover_letter.md", "fit_notes.md"):
         path = folder / name

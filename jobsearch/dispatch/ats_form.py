@@ -482,8 +482,8 @@ def _upload_resume(page: Any, ats: str, resume_path: Path) -> bool:
             locator = page.locator(selector)
             if locator.count() >= 1:
                 locator.first.set_input_files(str(resume_path))
-                page.wait_for_timeout(1500)
-                if _resume_attached(page):
+                page.wait_for_timeout(2500)
+                if _resume_attached(page, resume_path.name):
                     return True
         except Exception:
             continue
@@ -496,25 +496,49 @@ def _upload_resume(page: Any, ats: str, resume_path: Path) -> bool:
             with page.expect_file_chooser(timeout=5000) as chooser:
                 button.click()
             chooser.value.set_files(str(resume_path))
-            page.wait_for_timeout(2000)
-            if _resume_attached(page):
+            page.wait_for_timeout(2500)
+            if _resume_attached(page, resume_path.name):
                 return True
         except Exception:
             continue
     return False
 
 
-def _resume_attached(page: Any) -> bool:
-    try:
-        return bool(
-            page.evaluate(
-                "() => [...document.querySelectorAll('input[type=file]')]"
-                ".some(f => f.files && f.files.length > 0)"
-            )
-        )
-    except Exception:
-        return False
+def _resume_attached(page: Any, filename: str = "") -> bool:
+    """Whether the form visibly holds the attachment, judged conservatively.
 
+    Three signals, in decreasing strength, and it fails closed: an upload it
+    cannot confirm is reported as missing. Submitting an application with no
+    resume is far worse than queueing one that actually had it.
+
+    A raw `innerText` search is not enough. Greenhouse serves more than one
+    variant of the same form -- one offering "Autofill my application", another
+    "Quick Apply with MyGreenhouse" -- and they do not behave identically: the
+    upload sticks on one and reverts to the empty state on the other, while the
+    filename can linger in a detached node either way.
+    """
+    if not filename:
+        return False
+    try:
+        # 1. The filename rendered as visible text, which is what a person sees
+        #    beside the remove control once the upload is accepted.
+        locator = page.get_by_text(filename, exact=False)
+        for index in range(min(locator.count(), 4)):
+            if locator.nth(index).is_visible():
+                return True
+    except Exception:
+        pass
+    try:
+        # 2. A file input still holding the file. True on classic boards, and on
+        #    React boards only before the widget re-renders.
+        if page.evaluate(
+            "() => [...document.querySelectorAll('input[type=file]')]"
+            ".some(f => f.files && f.files.length > 0)"
+        ):
+            return True
+    except Exception:
+        pass
+    return False
 
 def _settle_after_upload(page: Any) -> None:
     """Give a resume parser time to finish rewriting the form.
@@ -686,16 +710,31 @@ def _blocking_fields(page: Any) -> list[dict[str, Any]]:
                 // check reports an attached resume as still missing. If a file
                 // input anywhere in this field's group holds a file, the field
                 // is answered whatever its mirror says.
+                // Only ever consulted for a field whose own label names an
+                // upload, and only within three levels. Both limits matter: an
+                // essay box can share a container with the resume widget, and a
+                // broader search marked every empty text field on the form as
+                // answered the moment a file attached -- which reads as "ready
+                // to submit" with the essays still blank.
+                const UPLOAD_LABEL = /resume|cv|attach|upload|portfolio/i;
+                const anyFile = root =>
+                    [...root.querySelectorAll('input[type=file]')]
+                        .some(f => f.files && f.files.length > 0);
                 const hasAttachment = el => {
+                    // Nearest first, so a form with two uploads resolves each
+                    // against its own widget where the DOM allows it.
                     let node = el.parentElement;
-                    for (let depth = 0; node && depth < 6; depth++, node = node.parentElement) {
-                        const files = [...node.querySelectorAll('input[type=file]')];
-                        if (files.some(f => f.files && f.files.length > 0)) return true;
+                    for (let depth = 0; node && depth < 3; depth++, node = node.parentElement) {
+                        if (anyFile(node)) return true;
                     }
-                    return false;
+                    // Otherwise fall back to the page. An upload's hidden state
+                    // input can sit well away from its file input, and the label
+                    // gate above already means we only ask this about a field
+                    // that is itself an upload.
+                    return anyFile(document);
                 };
 
-                const isEmpty = (el, kind) => {
+                const isEmpty = (el, kind, label) => {
                     if (kind === 'file') return el.files.length === 0;
                     if (kind === 'checkbox') return !el.checked;
                     if (kind === 'radio') {
@@ -707,7 +746,8 @@ def _blocking_fields(page: Any) -> list[dict[str, Any]]:
                     }
                     if (kind === 'combobox') return !comboFilled(el);
                     if (el.value) return false;
-                    return !hasAttachment(el);
+                    if (UPLOAD_LABEL.test(label || '')) return !hasAttachment(el);
+                    return true;
                 };
 
                 // The choices a radio group or native select offers, so the
@@ -747,7 +787,7 @@ def _blocking_fields(page: Any) -> list[dict[str, Any]]:
                     }
                     const label = describe(el, index);
                     if (skip.test(label)) return;
-                    if (!isEmpty(el, kind)) return;
+                    if (!isEmpty(el, kind, label)) return;
 
                     const ref = 'jsf' + index;
                     el.setAttribute('data-jobsearch-ref', ref);
@@ -978,6 +1018,24 @@ def submit(
                     "go through next run.",
                     artifacts=artifacts,
                     unanswered=list(outstanding),
+                )
+
+            # Checked after the questions, which are the more actionable report.
+            # A missing resume cannot be caught by the scan above: when a board
+            # loses an upload it drops the requirement from the DOM too, so "no
+            # blocking fields" and "no resume attached" look identical. Confirm
+            # it separately, or this reports a complete application with no
+            # resume in it.
+            if fields.resume_path and not _resume_attached(page, Path(fields.resume_path).name):
+                _screenshot(page, screenshot)
+                browser.close()
+                return DispatchResult(
+                    False,
+                    "ats_form",
+                    "the resume did not stay attached -- this board accepted the upload "
+                    "and then dropped it. Everything else was filled; finish this one by "
+                    "hand from the screenshot.",
+                    artifacts=artifacts,
                 )
 
             if dry_run:

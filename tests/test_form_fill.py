@@ -228,3 +228,80 @@ class FillElementTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AttachmentScopeTests(unittest.TestCase):
+    """The upload-satisfies-the-field rule must not leak to other fields.
+
+    A live run against Figma's board found this: once a resume attached, the
+    scan reported zero blocking fields while two required essay boxes were
+    still empty. The attachment check walked six ancestors looking for any file
+    input with a file, and an essay box shares a container with the resume
+    widget -- so every empty text field near it was counted as answered. The
+    run then reported an application ready to submit with the essays blank.
+    """
+
+    def _scan_source(self) -> str:
+        import inspect
+
+        return inspect.getsource(ats_form._blocking_fields)
+
+    def test_the_attachment_check_is_gated_on_the_label(self) -> None:
+        source = self._scan_source()
+        self.assertIn("UPLOAD_LABEL", source)
+        # The gate has to be applied, not merely defined.
+        self.assertIn("UPLOAD_LABEL.test(label", source)
+
+    def test_the_gate_matches_upload_wording_only(self) -> None:
+        import re
+
+        pattern = re.compile(r"resume|\bcv\b|attach|upload|portfolio", re.IGNORECASE)
+        for label in ("Resume/CV*", "Attach a CV", "Upload portfolio"):
+            with self.subTest(label=label):
+                self.assertTrue(pattern.search(label))
+        for label in (
+            "Why do you want to join Figma?*",
+            "From where do you intend to work? *",
+            "Location (City)*",
+        ):
+            with self.subTest(label=label):
+                self.assertIsNone(pattern.search(label))
+
+
+class ResumeGuardTests(unittest.TestCase):
+    """A resume that did not stay attached must not read as a complete run."""
+
+    class _Page:
+        def __init__(self, visible_name: bool, files: bool) -> None:
+            self.visible_name = visible_name
+            self.files = files
+
+        def get_by_text(self, _text: str, **_kwargs: object):
+            page = self
+
+            class _Loc:
+                def count(self) -> int:
+                    return 1 if page.visible_name else 0
+
+                def nth(self, _index: int):
+                    return self
+
+                def is_visible(self) -> bool:
+                    return page.visible_name
+
+            return _Loc()
+
+        def evaluate(self, _script: str, *_args: object) -> bool:
+            return self.files
+
+    def test_a_visible_filename_counts_as_attached(self) -> None:
+        self.assertTrue(ats_form._resume_attached(self._Page(True, False), "cv.pdf"))
+
+    def test_a_file_still_on_an_input_counts_as_attached(self) -> None:
+        self.assertTrue(ats_form._resume_attached(self._Page(False, True), "cv.pdf"))
+
+    def test_neither_signal_means_not_attached(self) -> None:
+        self.assertFalse(ats_form._resume_attached(self._Page(False, False), "cv.pdf"))
+
+    def test_it_fails_closed_without_a_filename_to_look_for(self) -> None:
+        self.assertFalse(ats_form._resume_attached(self._Page(True, True), ""))
