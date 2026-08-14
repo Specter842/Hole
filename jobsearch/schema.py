@@ -282,6 +282,44 @@ CREATE TABLE IF NOT EXISTS applications (
     response TEXT
 );
 
+-- Standing answers to the questions application forms ask that are not on a
+-- resume: work authorization, sponsorship, notice period, phone, why-this-
+-- company. Filling one of these from here is retrieval, not invention -- the
+-- answer is whatever the candidate wrote, verbatim. Nothing is ever generated
+-- into this table, which is what keeps auto-submit inside the grounding rule.
+--
+-- `pattern` is matched case-insensitively against the form's question label
+-- after punctuation is stripped. `company` scopes an answer to one employer so
+-- "why do you want to work here" can differ per application.
+CREATE TABLE IF NOT EXISTS application_answers (
+    id INTEGER PRIMARY KEY,
+    pattern TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'text',   -- text / choice / boolean
+    company TEXT,                        -- NULL = applies to every employer
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_answers_pattern ON application_answers(pattern);
+
+-- Questions a form asked that nothing in application_answers covered. Recorded
+-- rather than discarded so `answers gaps` can show what to write next, drawn
+-- from real postings instead of guesses about what forms ask.
+CREATE TABLE IF NOT EXISTS unanswered_questions (
+    id INTEGER PRIMARY KEY,
+    question TEXT NOT NULL,
+    -- Empty string rather than NULL for "any employer": SQLite treats NULLs as
+    -- distinct in a UNIQUE constraint, so a nullable column here would insert a
+    -- duplicate row on every repeat instead of counting it.
+    company TEXT NOT NULL DEFAULT '',
+    job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
+    seen_count INTEGER NOT NULL DEFAULT 1,
+    last_seen TEXT NOT NULL,
+    UNIQUE(question, company)
+);
+
 -- ------------------------------------------------------------------ pipeline
 
 -- Postings pulled from job boards. `fingerprint` collapses the same role

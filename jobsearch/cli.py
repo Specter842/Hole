@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from . import (
+    answers,
     db,
     generate,
     graph,
@@ -1024,6 +1025,71 @@ def _load_config(args: argparse.Namespace) -> Config | None:
     return config
 
 
+def cmd_answers(args: argparse.Namespace) -> int:
+    """Standing answers to the form questions a resume cannot cover."""
+    with db.session(args.db) as conn:
+        action = args.answers_action
+
+        if action == "add":
+            try:
+                answer_id = answers.add(
+                    conn, args.pattern, args.answer,
+                    kind=args.kind, company=args.company, notes=args.notes,
+                )
+            except ValueError as exc:
+                _err(str(exc))
+                return 1
+            scope = f" (only for {args.company})" if args.company else ""
+            _out(f"[{answer_id}] {answers.normalize(args.pattern)!r}{scope}")
+            _out(f"      -> {args.answer}")
+            cleared = answers.prune_answered(conn)
+            if cleared:
+                _out(f"That covers {cleared} question(s) that had blocked a form before.")
+            return 0
+
+        if action == "rm":
+            if not answers.remove(conn, args.id):
+                _err(f"No answer {args.id}.")
+                return 1
+            _out(f"Removed answer {args.id}.")
+            return 0
+
+        if action == "gaps":
+            rows = answers.gaps(conn)
+            if not rows:
+                _out("No unanswered questions recorded yet.")
+                _out("They accumulate when a form asks something nothing covers.")
+                return 0
+            _out("Questions that have blocked an application, most frequent first:")
+            _out("")
+            for row in rows:
+                scope = f"  [{row['company']}]" if row.get("company") else ""
+                _out(f"  {row['seen_count']:3d}x  {row['question']}{scope}")
+            _out("")
+            _out("Answer one with:")
+            _out('  python -m jobsearch answers add "<part of the question>" "<your answer>"')
+            return 0
+
+        stored = answers.list_all(conn)
+        if not stored:
+            _out("No stored answers.")
+            _out("")
+            _out("Application forms ask things a resume does not cover -- work")
+            _out("authorization, notice period, why this company. Record each answer")
+            _out("once and forms fill from what you wrote:")
+            _out('  python -m jobsearch answers add "visa sponsorship" "No"')
+            _out("")
+            _out("`answers gaps` lists the questions that have actually blocked you.")
+            return 0
+        for item in stored:
+            scope = f"  [{item.company}]" if item.company else ""
+            _out(f"[{item.id}] {item.pattern!r}  ({item.kind}){scope}")
+            _out(f"      -> {item.answer}")
+            if item.notes:
+                _out(f"      note: {item.notes}")
+    return 0
+
+
 def cmd_web(args: argparse.Namespace) -> int:
     from .web import serve
 
@@ -1618,6 +1684,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("runs", parents=[common], help="history of pipeline runs")
     p.set_defaults(func=cmd_runs)
+
+    p = sub.add_parser("answers", parents=[common],
+                       help="standing answers to form questions a resume cannot cover")
+    asub = p.add_subparsers(dest="answers_action")
+    q = asub.add_parser("add", parents=[common], help="record one answer")
+    q.add_argument("pattern", help="part of the question, e.g. 'visa sponsorship'")
+    q.add_argument("answer", help="exactly what should be entered")
+    q.add_argument("--kind", default="text", choices=list(answers.KINDS))
+    q.add_argument("--company", help="restrict to one employer")
+    q.add_argument("--notes")
+    q = asub.add_parser("rm", parents=[common])
+    q.add_argument("id", type=int)
+    asub.add_parser("gaps", parents=[common],
+                    help="questions that blocked an application and have no answer")
+    asub.add_parser("list", parents=[common])
+    p.set_defaults(func=cmd_answers, answers_action="list")
 
     p = sub.add_parser("web", parents=[common, config_opt],
                        help="local browser UI for reviewing jobs, drafts, and the profile")

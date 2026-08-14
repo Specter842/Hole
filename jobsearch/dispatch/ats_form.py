@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..config import AtsConfig
 from . import DispatchResult
@@ -228,6 +228,67 @@ def _wait_for_form(page: Any, ats: str, timeout_seconds: int) -> bool:
     return False
 
 
+def _screenshot(page: Any, path: Path) -> bool:
+    """Best-effort. A screenshot is an artifact, never a reason to abandon a run.
+
+    Chromium can fail `captureScreenshot` on a tall or still-painting page, and
+    letting that propagate would throw away a form that was filled correctly.
+    """
+    try:
+        page.screenshot(path=str(path), full_page=True)
+        return True
+    except Exception:
+        try:
+            page.screenshot(path=str(path))  # viewport only, often succeeds
+            return True
+        except Exception:
+            return False
+
+
+def _label_query(question: str) -> str:
+    """The searchable part of a form label.
+
+    Labels arrive decorated -- "Country*", "Phone *", "Why us?:" -- but the text
+    in the DOM is usually the bare question. `get_by_label(exact=False)` does a
+    substring match, so searching for the decorated version finds nothing.
+    """
+    return re.sub(r"[\s*:?]+$", "", str(question or "").strip()).strip()
+
+
+def _answer_field(page: Any, question: str, value: str) -> bool:
+    """Put a stored answer into the field labelled `question`.
+
+    Handles the three shapes an application question actually takes: a text box,
+    a textarea, and a dropdown. Anything else is left alone rather than poked at.
+    """
+    if not value:
+        return False
+    try:
+        locator = page.get_by_label(_label_query(question), exact=False)
+        count = locator.count()
+    except Exception:
+        return False
+    for index in range(min(count, 5)):
+        try:
+            element = locator.nth(index)
+            if not element.is_visible():
+                continue
+            tag = str(element.evaluate("e => e.tagName") or "").lower()
+            if tag == "select":
+                try:
+                    element.select_option(label=value)
+                except Exception:
+                    element.select_option(value)
+                return True
+            if (element.input_value() or "").strip():
+                continue
+            element.fill(value)
+            return True
+        except Exception:
+            continue
+    return False
+
+
 def _settle_after_upload(page: Any) -> None:
     """Give a resume parser time to finish rewriting the form.
 
@@ -327,7 +388,14 @@ def submit(
     project_root: Path,
     slug: str,
     dry_run: bool = False,
+    answer_lookup: Callable[[str], str | None] | None = None,
 ) -> DispatchResult:
+    """Fill and (unless dry_run) submit one application form.
+
+    `answer_lookup` maps a form question to a stored answer, or None. It is a
+    callable rather than a database handle so this module stays free of the
+    schema, and so a test can hand it a dictionary.
+    """
     if not config.enabled:
         return DispatchResult(False, "ats_form", "dispatch.ats.enabled is false")
 
@@ -364,7 +432,7 @@ def submit(
             # after navigation and refuse anything we did not recognize.
             landed = detect_ats(page.url)
             if landed != ats:
-                page.screenshot(path=str(screenshot), full_page=True)
+                _screenshot(page, screenshot)
                 browser.close()
                 where = "an unrecognized site" if landed == "unknown" else landed
                 return DispatchResult(
@@ -378,7 +446,7 @@ def submit(
             _wait_for_form(page, ats, config.timeout_seconds)
 
             if _has_captcha(page):
-                page.screenshot(path=str(screenshot), full_page=True)
+                _screenshot(page, screenshot)
                 browser.close()
                 return DispatchResult(
                     False,
@@ -421,7 +489,7 @@ def submit(
                 if _fill_first(page, COVER_LETTER_SELECTORS.get(ats, []), fields.cover_letter_text):
                     filled.append("cover_letter")
 
-            page.screenshot(path=str(screenshot), full_page=True)
+            _screenshot(page, screenshot)
             artifacts.append(str(screenshot))
 
             # Nothing matched. The page is not the form we expected, so the
@@ -439,13 +507,31 @@ def submit(
                 )
 
             outstanding = _unfilled_required(page)
+
+            # Whatever is left is a question the resume cannot answer: work
+            # authorization, notice period, why-this-company. If the candidate
+            # has written an answer down, use it verbatim. If not, this run
+            # stops -- inventing a "no" to a sponsorship question would be a lie
+            # told to an employer under their name.
+            if outstanding and answer_lookup is not None:
+                for question in list(outstanding):
+                    stored = answer_lookup(question)
+                    if stored and _answer_field(page, question, stored):
+                        filled.append(f"answered: {question[:40]}")
+                _screenshot(page, screenshot)
+                outstanding = _unfilled_required(page)
+
             if outstanding:
                 browser.close()
                 return DispatchResult(
                     False,
                     "ats_form",
-                    "required field(s) this tool will not guess at: " + ", ".join(outstanding[:6]),
+                    "required question(s) with no stored answer: "
+                    + ", ".join(outstanding[:6])
+                    + ".  Record answers with `jobsearch answers add` and this will "
+                    "go through next run.",
                     artifacts=artifacts,
+                    unanswered=list(outstanding),
                 )
 
             if dry_run:
@@ -474,8 +560,10 @@ def submit(
 
             page.wait_for_load_state("networkidle", timeout=config.timeout_seconds * 1000)
             confirmation = shot_dir / f"{slug}_confirmation.png"
-            page.screenshot(path=str(confirmation), full_page=True)
-            artifacts.append(str(confirmation))
+            # The form is already submitted by this point. A failed screenshot
+            # must not turn a successful application into a reported failure.
+            if _screenshot(page, confirmation):
+                artifacts.append(str(confirmation))
 
             body = (page.content() or "").lower()
             browser.close()

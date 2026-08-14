@@ -35,6 +35,10 @@ class DispatchResult:
     detail: str = ""
     recipient: str | None = None
     artifacts: list[str] = field(default_factory=list)
+    # Required questions the form asked that nothing could answer. Reported
+    # rather than swallowed so the caller can record them and the candidate can
+    # write the answer once instead of hitting the same wall on every posting.
+    unanswered: list[str] = field(default_factory=list)
 
     def __str__(self) -> str:
         status = "sent" if self.ok else "failed"

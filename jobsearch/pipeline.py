@@ -19,7 +19,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from . import db, generate, graph, matching, policy, render, retrieval, sourcing, verify
+from . import answers, db, generate, graph, matching, policy, render, retrieval, sourcing, verify
 from .config import Config
 from .dispatch import DispatchResult, ats_form, email_gmail, find_apply_email
 
@@ -166,14 +166,29 @@ def _dispatch(
             resume_path=resume_pdf,
             cover_letter_text=result.cover_letter,
         )
-        return ats_form.submit(
+        company = job.get("company")
+
+        def lookup(question: str) -> str | None:
+            stored = answers.find(conn, question, company=company)
+            return stored.answer if stored else None
+
+        outcome = ats_form.submit(
             config.dispatch.ats,
             apply_url=str(job.get("apply_url") or job.get("url") or ""),
             fields=fields,
             project_root=db.PROJECT_ROOT,
             slug=slug,
             dry_run=dry_run,
+            answer_lookup=lookup,
         )
+        # Remember what blocked this one. The same handful of questions come up
+        # on every posting, so recording them turns a repeated wall into a short
+        # list the candidate can answer once.
+        for question in outcome.unanswered:
+            answers.record_gap(conn, question, company=company, job_id=job.get("id"))
+        if outcome.unanswered:
+            conn.commit()
+        return outcome
 
     if channel == "email":
         recipient = find_apply_email(job.get("description"), job.get("url"))

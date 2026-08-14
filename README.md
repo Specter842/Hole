@@ -255,7 +255,7 @@ Pass `--db` *after* the final subcommand, or set `JOBSEARCH_DB`.
 python -m unittest discover -s tests -v
 ```
 
-226 tests. No API key, no network — connectors run against captured response shapes, and
+246 tests. No API key, no network — connectors run against captured response shapes, and
 both model SDKs are replaced with fakes so the failure modes that matter (safety blocks,
 a thinking budget eating the token ceiling, blocked prompts) are exercised without
 spending a call.
@@ -411,12 +411,48 @@ Three things it learned the hard way, all verified against live boards:
   own guesses at your name and email into the form, discarding anything typed before.
   Upload first, then fill — your record beats a parser's guess at your PDF.
 
-What this means in practice: it reliably fills name, email, phone, and resume, and then
-**usually stops**. Real postings ask things like *"Why Anthropic?"*, *"Do you require visa
-sponsorship?"*, or a location autocomplete — questions this tool will not invent answers
-to. Expect it to queue most applications for you to finish rather than auto-submit them.
-That is the zero-hallucination rule reaching its logical end: a tool that will not make up
-a metric will not make up an essay answer either.
+### Answering what a resume can't
+
+Real postings ask things no resume covers: *"Do you require visa sponsorship?"*, *"What is
+your notice period?"*, *"Why Anthropic?"*. The tool will not invent answers to those — an
+invented "no" to a sponsorship question is a lie told to an employer under your name.
+
+So you write them once instead:
+
+```bash
+python -m jobsearch answers add "visa sponsorship" "No"
+```
+
+Filling a form then becomes a lookup, which keeps auto-submit inside the same rule as
+everything else: what gets sent traces to something you recorded. Patterns match
+case-insensitively against the question after decoration (`*`, `?`, `:`) is stripped, the
+most specific pattern wins, and `--company` scopes an answer to one employer so *"why do
+you want to work here"* can differ per application. An answer scoped to one company is
+never used for another.
+
+Demographic and voluntary self-identification questions are refused at both ends — you
+cannot store one and it will never fill one, whatever patterns exist.
+
+Questions that block a run are recorded, so the list comes from real postings rather than
+guesses about what forms ask:
+
+```bash
+python -m jobsearch answers gaps
+```
+
+### What it can't do
+
+Greenhouse's current board renders **custom React comboboxes** for Country, Location, and
+some Yes/No questions. Those are not `<select>` elements and they are genuinely ambiguous:
+on a live Figma form, `get_by_label("Country")` matched *three* different widgets, the
+first of which was the phone country-code prefix. Picking one and submitting it would put
+a wrong answer on a real application under your name, so the tool refuses.
+
+Practically: expect it to fill name, email, phone, resume, and any text or textarea
+question you have an answer for, then **queue the rest for you to finish**. That is the
+zero-hallucination rule reaching its logical end. A tool that will not make up a metric
+will not make up an essay answer, and one that cannot tell two dropdowns apart should not
+guess between them.
 
 **`email`** sends from your own Gmail account over OAuth with the `gmail.send` scope —
 it cannot read your mail. It only emails an address the posting *itself* invites
