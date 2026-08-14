@@ -1024,6 +1024,37 @@ def _load_config(args: argparse.Namespace) -> Config | None:
     return config
 
 
+def cmd_web(args: argparse.Namespace) -> int:
+    from .web import serve
+
+    config = _load_config(args)
+    if config is None:
+        return 1
+    db_path = db.resolve_db_path(getattr(args, "db", None))
+    if not db_path.is_file():
+        _err(f"No database at {db_path}. Run `python -m jobsearch init` first.")
+        return 1
+
+    def announce(url: str) -> None:
+        _out(f"Review UI: {url}")
+        _out("Loopback only -- nothing outside this machine can reach it.")
+        _out("Ctrl-C to stop.")
+
+    try:
+        serve(
+            db_path=db_path,
+            config=config,
+            port=args.port,
+            open_browser=not args.no_browser,
+            ready=announce,
+        )
+    except OSError as exc:
+        _err(f"Could not start the server on port {args.port}: {exc}")
+        return 1
+    _out("Stopped.")
+    return 0
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     config = _load_config(args)
     if config is None:
@@ -1587,6 +1618,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("runs", parents=[common], help="history of pipeline runs")
     p.set_defaults(func=cmd_runs)
+
+    p = sub.add_parser("web", parents=[common, config_opt],
+                       help="local browser UI for reviewing jobs, drafts, and the profile")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
+    p.set_defaults(func=cmd_web)
 
     p = sub.add_parser("outreach", parents=[common, config_opt],
                        help="cold email and LinkedIn message drafts")

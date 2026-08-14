@@ -162,6 +162,32 @@ python -m jobsearch render output/2026-07-31_acme_engineer/resume.md --pdf
 Print-ready HTML sized for one US Letter page; direct PDF if `weasyprint` or
 `wkhtmltopdf` is installed, otherwise print to PDF from a browser.
 
+## Review UI
+
+Everything above has a browser front end:
+
+```bash
+python -m jobsearch web
+```
+
+Opens `http://127.0.0.1:8765`. Six pages: a dashboard that says plainly what is and
+isn't wired up, sourced jobs ranked by fit, the application queue, the profile graph with
+each skill's evidence, the review list for model-extracted rows, and run history. You can
+tailor a posting, approve or reject a draft, and confirm extracted rows from there.
+
+It is **loopback only and there is no login**, because it serves your full employment
+history and drafts addressed to real employers. Passing a public bind address is refused
+rather than warned about. Three things guard it:
+
+- **127.0.0.1 only.** `serve()` raises on anything else.
+- **CSRF token** on every mutating request, minted per process. Any web page you have open
+  can POST to localhost; without the token it gets a 403. GET never changes state.
+- **Host header check**, which blocks DNS rebinding — a hostile domain re-resolving to
+  127.0.0.1 to read these pages from a tab you left open.
+
+Sending is deliberately *not* wired to a button. Approving marks the row; the pipeline
+sends. One irreversible action, one place it can happen.
+
 ## The grounding check
 
 Every generated draft is scanned before you see it:
@@ -229,7 +255,7 @@ Pass `--db` *after* the final subcommand, or set `JOBSEARCH_DB`.
 python -m unittest discover -s tests -v
 ```
 
-189 tests. No API key, no network — connectors run against captured response shapes, and
+212 tests. No API key, no network — connectors run against captured response shapes, and
 both model SDKs are replaced with fakes so the failure modes that matter (safety blocks,
 a thinking budget eating the token ceiling, blocked prompts) are exercised without
 spending a call.
@@ -249,6 +275,7 @@ jobsearch/
   linking.py       attach skills to records that name them
   render.py        markdown -> print HTML -> PDF
   cli.py           argparse front end
+  web/             local review UI: loopback-only http.server, no dependencies
   config.py        config.toml loading and validation
   policy.py        the two autonomy gates: screen, and decide_dispatch
   pipeline.py      the unattended run, end to end
