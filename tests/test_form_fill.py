@@ -96,6 +96,44 @@ class DedupeFieldsTests(unittest.TestCase):
         self.assertEqual([f["label"] for f in ats_form._dedupe_fields(fields)], ["First", "Second"])
 
 
+class DetectAtsTests(unittest.TestCase):
+    def test_known_hosts(self) -> None:
+        cases = {
+            "https://job-boards.greenhouse.io/x/jobs/1": "greenhouse",
+            "https://jobs.lever.co/ro/abc/apply": "lever",
+            "https://jobs.ashbyhq.com/x/y": "ashby",
+            "https://apply.workable.com/x/j/ABC/": "workable",
+            "https://jobs.smartrecruiters.com/x/123": "smartrecruiters",
+            "https://x.recruitee.com/o/y": "recruitee",
+            "https://x.breezy.hr/p/abc": "breezy",
+            "https://x.applytojob.com/apply/y": "jazzhr",
+            "https://x.bamboohr.com/careers/12": "bamboohr",
+            "https://jobs.jobvite.com/x/job/y": "jobvite",
+        }
+        for url, expected in cases.items():
+            with self.subTest(url=url):
+                self.assertEqual(ats_form.detect_ats(url), expected)
+
+    def test_an_unknown_host_is_refused_not_guessed(self) -> None:
+        self.assertEqual(ats_form.detect_ats("https://example.com/careers/apply"), "unknown")
+        self.assertEqual(ats_form.detect_ats(""), "unknown")
+
+
+class SelectorFallbackTests(unittest.TestCase):
+    def test_ats_specific_selectors_come_before_generic(self) -> None:
+        out = ats_form._selectors(ats_form.RESUME_SELECTORS, "greenhouse", ats_form.GENERIC_RESUME)
+        self.assertEqual(out[0], "#resume")
+        self.assertIn("input[type='file']", out)
+
+    def test_an_unmapped_ats_still_gets_the_generic_set(self) -> None:
+        out = ats_form._selectors(ats_form.RESUME_SELECTORS, "workable", ats_form.GENERIC_RESUME)
+        self.assertEqual(out, ats_form.GENERIC_RESUME)
+
+    def test_no_duplicates(self) -> None:
+        out = ats_form._selectors(ats_form.RESUME_SELECTORS, "lever", ats_form.GENERIC_RESUME)
+        self.assertEqual(len(out), len(set(out)))
+
+
 class LabelQueryTests(unittest.TestCase):
     def test_required_markers_are_stripped(self) -> None:
         self.assertEqual(ats_form._label_query("Country*"), "Country")

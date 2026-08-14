@@ -1,4 +1,10 @@
-"""Fill and submit Greenhouse / Lever / Ashby application forms in a real browser.
+"""Fill and submit application forms in a real browser.
+
+Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Recruitee, BreezyHR,
+JazzHR, BambooHR, Personio, Teamtailor, Rippling, and Jobvite are recognized by
+host. Most of the work here is ATS-agnostic -- required fields are found by
+their DOM properties and filled by the label a person reads -- so the boards
+without a hand-written selector map are filled by the same generic path.
 
 Needs Playwright:
 
@@ -95,14 +101,30 @@ class ApplicantFields:
         return missing
 
 
+# Host fragment -> ATS name. Order matters only in that the first hit wins.
+ATS_HOSTS: tuple[tuple[str, str], ...] = (
+    ("greenhouse.io", "greenhouse"),
+    ("lever.co", "lever"),
+    ("ashbyhq.com", "ashby"),
+    ("workable.com", "workable"),
+    ("smartrecruiters.com", "smartrecruiters"),
+    ("recruitee.com", "recruitee"),
+    ("breezy.hr", "breezy"),
+    ("applytojob.com", "jazzhr"),
+    ("jazz.co", "jazzhr"),
+    ("bamboohr.com", "bamboohr"),
+    ("personio.de", "personio"),
+    ("teamtailor.com", "teamtailor"),
+    ("rippling.com", "rippling"),
+    ("jobvite.com", "jobvite"),
+)
+
+
 def detect_ats(url: str) -> str:
     lowered = (url or "").lower()
-    if "greenhouse.io" in lowered:
-        return "greenhouse"
-    if "lever.co" in lowered:
-        return "lever"
-    if "ashbyhq.com" in lowered:
-        return "ashby"
+    for fragment, name in ATS_HOSTS:
+        if fragment in lowered:
+            return name
     return "unknown"
 
 
@@ -165,6 +187,34 @@ SUBMIT_SELECTORS = {
     "ashby": ["button[type='submit']"],
 }
 
+# Tried after any ATS-specific selectors above. Most of this module is already
+# ATS-agnostic -- the blocking-field scan finds required inputs by their DOM
+# properties, and LABEL_FALLBACKS fills by the text a person reads -- so a board
+# nobody wrote selectors for still gets filled. These cover the rest.
+GENERIC_RESUME = [
+    "input[type='file'][name*='resume']",
+    "input[type='file'][name*='cv']",
+    "input[type='file'][accept*='pdf']",
+    "input[type='file']",
+]
+GENERIC_COVER_LETTER = [
+    "textarea[name*='cover']",
+    "textarea[id*='cover']",
+]
+GENERIC_SUBMIT = [
+    "button[type='submit']",
+    "input[type='submit']",
+]
+
+
+def _selectors(table: dict[str, list[str]], ats: str, generic: list[str]) -> list[str]:
+    """ATS-specific selectors first, then the generic ones, without duplicates."""
+    out = list(table.get(ats, []))
+    for selector in generic:
+        if selector not in out:
+            out.append(selector)
+    return out
+
 
 def _fill_first(page: Any, selectors: list[str], value: str) -> bool:
     if not value:
@@ -220,6 +270,15 @@ def _wait_for_form(page: Any, ats: str, timeout_seconds: int) -> bool:
     """
     budget = max(1, min(timeout_seconds, 20)) * 1000
     for selector, _attribute in FIELD_MAP.get(ats, []):
+        try:
+            page.wait_for_selector(selector, state="visible", timeout=budget)
+            return True
+        except Exception:
+            continue
+    # Boards without a hand-written selector map still have a form. Wait for any
+    # text input to become visible, which is as good a "the form rendered"
+    # signal as a named field and works on every ATS.
+    for selector in ("input[type='email']", "input[type='text']", "form input"):
         try:
             page.wait_for_selector(selector, state="visible", timeout=budget)
             return True
@@ -418,7 +477,7 @@ def _upload_resume(page: Any, ats: str, resume_path: Path) -> bool:
     never registers -- so fall back to driving the visible "Attach" button and
     answering the file chooser it opens, which is what a person does.
     """
-    for selector in RESUME_SELECTORS.get(ats, []):
+    for selector in _selectors(RESUME_SELECTORS, ats, GENERIC_RESUME):
         try:
             locator = page.locator(selector)
             if locator.count() >= 1:
@@ -510,6 +569,24 @@ def _blocking_fields(page: Any) -> list[dict[str, Any]]:
                 const clean = s => (s || '').replace(/\\s+/g, ' ').trim();
 
                 const describe = (el, index) => {
+                    // Checked before anything else, because a radio's own label
+                    // is its option ("Yes") and the question lives on the block
+                    // wrapping the group. Radios only -- a lone checkbox's label
+                    // ("I agree to the terms") really is the question.
+                    if (el.type === 'radio') {
+                        let node = el.parentElement;
+                        for (let d = 0; node && d < 6; d++, node = node.parentElement) {
+                            const whole = clean(node.innerText);
+                            if (!whole) continue;
+                            let rest = whole;
+                            node.querySelectorAll('label, li').forEach(o => {
+                                rest = rest.replace(clean(o.innerText), ' ');
+                            });
+                            rest = clean(rest);
+                            if (rest.length >= 8) return rest;
+                        }
+                    }
+
                     const byLabel = el.labels && el.labels[0] ? el.labels[0].innerText : '';
                     if (clean(byLabel)) return clean(byLabel);
 
@@ -522,20 +599,28 @@ def _blocking_fields(page: Any) -> list[dict[str, Any]]:
                         if (node && clean(node.innerText)) return clean(node.innerText);
                     }
                     if (clean(el.placeholder)) return clean(el.placeholder);
-                    if (clean(el.name)) return clean(el.name);
-                    if (clean(el.id)) return clean(el.id);
+
+                    // Walk up looking for the question a person reads above the
+                    // box. `[class*=question]` matters: Lever writes the prompt
+                    // into `.application-question` with no <label> anywhere, and
+                    // without it these fall through to a machine name like
+                    // `cards[uuid][field0]`, which no stored answer can match.
+                    let node = el.parentElement;
+                    for (let depth = 0; node && depth < 5; depth++, node = node.parentElement) {
+                        const label = node.querySelector(
+                            'label, legend, [class*="label"], [class*="question"], [class*="Question"]'
+                        );
+                        if (label && clean(label.innerText)) return clean(label.innerText);
+                    }
 
                     const wrapper = el.closest('label');
                     if (wrapper && clean(wrapper.innerText)) return clean(wrapper.innerText);
 
-                    // Walk up a few levels looking for the question text a
-                    // person would read above the box.
-                    let node = el.parentElement;
-                    for (let depth = 0; node && depth < 4; depth++, node = node.parentElement) {
-                        const label = node.querySelector('label, legend, [class*="label"]');
-                        if (label && clean(label.innerText)) return clean(label.innerText);
-                        depth++;
-                    }
+                    // Machine names are a last resort: they identify the field
+                    // for a human reading the report even though no stored
+                    // answer will ever match one.
+                    if (clean(el.name)) return clean(el.name);
+                    if (clean(el.id)) return clean(el.id);
                     return `unlabelled ${el.type || el.tagName.toLowerCase()} field #${index + 1}`;
                 };
 
@@ -829,7 +914,7 @@ def submit(
                     filled.append(f"{attribute} (by label)")
 
             if fields.cover_letter_text:
-                if _fill_first(page, COVER_LETTER_SELECTORS.get(ats, []), fields.cover_letter_text):
+                if _fill_first(page, _selectors(COVER_LETTER_SELECTORS, ats, GENERIC_COVER_LETTER), fields.cover_letter_text):
                     filled.append("cover_letter")
 
             _screenshot(page, screenshot)
@@ -905,7 +990,7 @@ def submit(
                 )
 
             submitted = False
-            for selector in SUBMIT_SELECTORS.get(ats, []):
+            for selector in _selectors(SUBMIT_SELECTORS, ats, GENERIC_SUBMIT):
                 try:
                     locator = page.locator(selector)
                     if locator.count() >= 1 and locator.first.is_visible():
