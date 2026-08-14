@@ -824,7 +824,10 @@ def cmd_tailor(args: argparse.Namespace) -> int:
         _out(generate.build_user_message(job_description, plan.to_facts()))
         return 0
 
-    _out(f"Calling {args.model} with {len(plan.experiences)} position(s), {plan.bullet_count()} bullet(s)...")
+    # `--model` is normally unset, meaning "whatever the configured provider
+    # defaults to". Printing the raw argument in that case says "Calling None".
+    model_name = args.model or llm.default_model()
+    _out(f"Calling {model_name} with {len(plan.experiences)} position(s), {plan.bullet_count()} bullet(s)...")
     try:
         result = generate.generate(
             job_description, plan, model=args.model, max_tokens=args.max_tokens

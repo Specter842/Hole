@@ -39,8 +39,16 @@ DEFAULT_MAX_TOKENS = 8000
 # Flash is the right default for this workload: the free tier's request budget
 # is the binding constraint, not model strength, and the generation prompt does
 # the heavy lifting by handing over a closed fact set.
+# Pinned, not an alias. `gemini-flash-latest` works but moves under you, and a
+# resume generator changing behaviour without the config changing is worse than
+# an occasional manual bump.
+#
+# Note gemini-2.5-flash is still returned by models.list() while refusing to
+# generate for keys issued after its retirement -- "This model is no longer
+# available to new users", HTTP 404. Presence in the listing is not proof a
+# model is usable, so verify by calling it.
 DEFAULT_MODELS = {
-    GEMINI: "gemini-2.5-flash",
+    GEMINI: "gemini-3.5-flash",
     ANTHROPIC: "claude-sonnet-5",
 }
 

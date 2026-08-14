@@ -179,7 +179,11 @@ def generate(
         cover_letter=letter,
         fit_notes=notes,
         raw=raw,
-        model=model,
+        # `model` is None whenever the caller did not pin one, which is the
+        # normal case. Recording that None into sources.json loses the only
+        # record of which model wrote a document -- so take what the provider
+        # actually used.
+        model=usage.get("model") or model,
         usage=usage,
     )
 

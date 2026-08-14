@@ -108,7 +108,7 @@ class ProviderResolutionTests(unittest.TestCase):
     def test_defaults_to_gemini_with_no_keys(self) -> None:
         with mock.patch.dict("os.environ", {}, clear=True):
             self.assertEqual(llm.resolve_provider(), "gemini")
-            self.assertEqual(llm.default_model(), "gemini-2.5-flash")
+            self.assertEqual(llm.default_model(), llm.DEFAULT_MODELS[llm.GEMINI])
 
     def test_explicit_argument_wins(self) -> None:
         with mock.patch.dict("os.environ", {"JOBSEARCH_LLM_PROVIDER": "gemini"}, clear=True):
@@ -187,7 +187,7 @@ class GeminiCallTests(unittest.TestCase):
         self.assertEqual(text, "the resume")
         self.assertEqual(usage["stop_reason"], "end_turn")
         self.assertEqual(usage["provider"], "gemini")
-        self.assertEqual(usage["model"], "gemini-2.5-flash")
+        self.assertEqual(usage["model"], llm.DEFAULT_MODELS[llm.GEMINI])
         self.assertEqual(usage["input_tokens"], 11)
         self.assertEqual(usage["output_tokens"], 22)
         self.assertEqual(captured["api_key"], "g-key")
@@ -281,7 +281,7 @@ class CallModelBridgeTests(unittest.TestCase):
                 text, usage = generate.call_model("S", "U")
         self.assertEqual(text, "drafted")
         self.assertEqual(usage["provider"], "gemini")
-        self.assertEqual(captured["model"], "gemini-2.5-flash")
+        self.assertEqual(captured["model"], llm.DEFAULT_MODELS[llm.GEMINI])
 
 
 class LlmConfigTests(unittest.TestCase):
