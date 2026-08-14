@@ -13,7 +13,7 @@ from typing import Any
 
 from .. import db
 from ..config import Config
-from . import aggregators, ats_boards
+from . import aggregators, ats_boards, remote_boards
 from .base import Posting, SourceError, SourceResult, dedupe, html_to_text  # noqa: F401
 
 __all__ = [
@@ -76,6 +76,15 @@ def collect(config: Config) -> SourcingReport:
                         keyword=keyword_query,
                         location=location_query,
                         results_per_page=int(source.get("results_per_page", 50)),
+                    )
+                )
+            elif source.name in remote_boards.REMOTE_BOARDS:
+                # The aggregator boards take no credentials and no per-company
+                # slug -- they are one endpoint each, so enabling one is just
+                # naming it.
+                report.absorb(
+                    remote_boards.REMOTE_BOARDS[source.name](
+                        limit=int(source.get("limit", 100))
                     )
                 )
             else:

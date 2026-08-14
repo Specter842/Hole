@@ -94,6 +94,43 @@ enabled = false
 # The name in jobs.ashbyhq.com/<name>
 boards = ["ramp"]
 
+# ---------------------------------------------------------- remote job boards
+#
+# Aggregator boards that publish a public API for exactly this. No key, no
+# account, no per-company slug -- enabling one is just naming it. These are
+# where postings are FOUND; the application itself is still submitted on
+# whatever ATS the listing links out to.
+#
+# Absent on purpose: Wellfound and FlexJobs forbid automated access, and
+# Upwork/Fiverr/Toptal/PeoplePerHour are freelance marketplaces that need an
+# authenticated account. Same reasoning as LinkedIn and Indeed -- a banned
+# account costs more than the listings are worth.
+
+[sources.remotive]
+enabled = true
+limit = 100
+
+[sources.remoteok]
+enabled = true
+limit = 100
+
+[sources.himalayas]
+enabled = true
+limit = 50
+
+[sources.jobicy]
+enabled = false
+limit = 50
+
+[sources.workingnomads]
+enabled = false
+limit = 100
+
+# General German job board; only a small fraction of it is remote.
+[sources.arbeitnow]
+enabled = false
+limit = 50
+
 # Broad aggregators. Both are legitimate public developer APIs with free keys.
 [sources.adzuna]
 enabled = false

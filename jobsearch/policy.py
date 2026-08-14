@@ -22,6 +22,7 @@ from typing import Any, Sequence
 
 from . import db, matching
 from .config import Config
+from .dispatch import ats_form
 
 SEND = "send"
 QUEUE = "queue"
@@ -193,7 +194,16 @@ def available_channel(job: dict[str, Any], config: Config) -> str | None:
     """First configured channel that can actually handle this posting."""
     for channel in config.dispatch.channel_order:
         if channel == "ats_form":
-            if config.dispatch.ats.enabled and job.get("apply_url"):
+            # Having an apply_url is not enough -- it has to be a form this tool
+            # can actually drive. Aggregator boards (Remotive, RemoteOK,
+            # Himalayas) point their apply link at their own listing page, so
+            # choosing ats_form for those means launching a browser to discover
+            # the host is unrecognized, once per posting. Check first.
+            if (
+                config.dispatch.ats.enabled
+                and job.get("apply_url")
+                and ats_form.detect_ats(str(job["apply_url"])) != "unknown"
+            ):
                 return "ats_form"
         elif channel == "email":
             if config.dispatch.email.enabled:
