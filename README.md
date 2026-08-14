@@ -255,7 +255,7 @@ Pass `--db` *after* the final subcommand, or set `JOBSEARCH_DB`.
 python -m unittest discover -s tests -v
 ```
 
-246 tests. No API key, no network — connectors run against captured response shapes, and
+270 tests. No API key, no network — connectors run against captured response shapes, and
 both model SDKs are replaced with fakes so the failure modes that matter (safety blocks,
 a thinking budget eating the token ceiling, blocked prompts) are exercised without
 spending a call.
@@ -392,12 +392,18 @@ rules that produced them.
 
 `dispatch.channel_order` is tried in order.
 
-**`ats_form`** drives Greenhouse/Lever/Ashby application forms in a real browser
-(`pip install playwright && playwright install chromium`). It fills only fields it
-recognizes, screenshots the completed form before submitting, and stops rather than
-guessing: an unmappable required field, a missing resume, or **a CAPTCHA** all abort and
-queue the application for you to finish. It never answers demographic or voluntary
-self-identification questions.
+**`ats_form`** drives application forms in a real browser (`pip install playwright &&
+playwright install chromium`). Thirteen platforms are recognized by host — Greenhouse,
+Lever, Ashby, Workable, SmartRecruiters, Recruitee, BreezyHR, JazzHR, BambooHR, Personio,
+Teamtailor, Rippling, and Jobvite — and most of the filling is ATS-agnostic anyway:
+required fields are found by their DOM properties and filled by the label a person reads,
+so a board with no hand-written selectors is handled by the same generic path.
+
+It screenshots the completed form before submitting, and stops rather than guessing: an
+unresolvable required field, a missing resume, an unrecognized host after a redirect, or
+**a CAPTCHA** all abort and queue the application for you to finish. It never answers
+demographic or voluntary self-identification questions — those are refused at both ends,
+so you cannot even store one.
 
 Three things it learned the hard way, all verified against live boards:
 
@@ -440,19 +446,34 @@ guesses about what forms ask:
 python -m jobsearch answers gaps
 ```
 
-### What it can't do
+### How a form gets filled
 
-Greenhouse's current board renders **custom React comboboxes** for Country, Location, and
-some Yes/No questions. Those are not `<select>` elements and they are genuinely ambiguous:
-on a live Figma form, `get_by_label("Country")` matched *three* different widgets, the
-first of which was the phone country-code prefix. Picking one and submitting it would put
-a wrong answer on a real application under your name, so the tool refuses.
+Every required field still empty after the first pass is stamped with a reference and
+filled through that reference, never by searching for its label. Label text is not
+identity: on Figma's live board `get_by_label("Country")` matches three widgets and the
+first is the phone dial-code prefix. An element reference cannot be wrong about which
+field it is.
 
-Practically: expect it to fill name, email, phone, resume, and any text or textarea
-question you have an answer for, then **queue the rest for you to finish**. That is the
-zero-hallucination rule reaching its logical end. A tool that will not make up a metric
-will not make up an essay answer, and one that cannot tell two dropdowns apart should not
-guess between them.
+Each widget kind is handled — text, textarea, native select, radio group, checkbox, and
+the React comboboxes that Country and Location autocompletes are built from. Filling runs
+up to three passes because answering one question reveals follow-ups that were hidden,
+then **rescans** rather than trusting that each fill took; a combobox that silently
+rejected a value is not counted as answered just because the click didn't raise.
+
+Two refusals do the safety work:
+
+- An answer matching **more than one** offered option fills nothing. `"Austin"` against
+  `["Austin, Texas", "Austin, Indiana"]` is genuinely ambiguous, and guessing puts a city
+  on your application that you never named.
+- A checkbox is only ever ticked, never cleared. An answer of "No" leaves it alone.
+
+Anything unresolved stops the run and gets recorded in `answers gaps`. An unfilled field
+costs you a minute; a wrongly filled one gets submitted.
+
+**Verified end to end**: a dry run against Figma's live Greenhouse posting reports
+`unanswered: []` — resume attached, comboboxes resolved, every question answered from
+stored values, demographic questions left untouched. It stops before submit only because
+it is a dry run.
 
 **`email`** sends from your own Gmail account over OAuth with the `gmail.send` scope —
 it cannot read your mail. It only emails an address the posting *itself* invites
