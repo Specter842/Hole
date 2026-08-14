@@ -255,7 +255,7 @@ Pass `--db` *after* the final subcommand, or set `JOBSEARCH_DB`.
 python -m unittest discover -s tests -v
 ```
 
-212 tests. No API key, no network — connectors run against captured response shapes, and
+226 tests. No API key, no network — connectors run against captured response shapes, and
 both model SDKs are replaced with fakes so the failure modes that matter (safety blocks,
 a thinking budget eating the token ceiling, blocked prompts) are exercised without
 spending a call.
@@ -398,6 +398,25 @@ recognizes, screenshots the completed form before submitting, and stops rather t
 guessing: an unmappable required field, a missing resume, or **a CAPTCHA** all abort and
 queue the application for you to finish. It never answers demographic or voluntary
 self-identification questions.
+
+Three things it learned the hard way, all verified against live boards:
+
+- **A board URL is not a promise about where you land.** `boards.greenhouse.io/stripe/...`
+  redirects to `stripe.com/careers/...`, which has no form on it at all. The host is
+  re-checked *after* navigation and anything unrecognized is refused, because the
+  alternative is typing your name, email, and phone into an arbitrary page.
+- **The form renders after `domcontentloaded`.** Greenhouse's current board is a React
+  app; without waiting for a known field the fill pass runs against an empty page.
+- **The resume is uploaded first, on purpose.** Greenhouse parses the file and writes its
+  own guesses at your name and email into the form, discarding anything typed before.
+  Upload first, then fill — your record beats a parser's guess at your PDF.
+
+What this means in practice: it reliably fills name, email, phone, and resume, and then
+**usually stops**. Real postings ask things like *"Why Anthropic?"*, *"Do you require visa
+sponsorship?"*, or a location autocomplete — questions this tool will not invent answers
+to. Expect it to queue most applications for you to finish rather than auto-submit them.
+That is the zero-hallucination rule reaching its logical end: a tool that will not make up
+a metric will not make up an essay answer either.
 
 **`email`** sends from your own Gmail account over OAuth with the `gmail.send` scope —
 it cannot read your mail. It only emails an address the posting *itself* invites

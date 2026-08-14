@@ -131,6 +131,22 @@ FIELD_MAP: dict[str, list[tuple[str, str]]] = {
     ],
 }
 
+# Fallback for anything the selectors above miss. Greenhouse's current React
+# board is the case that forced this: `#first_name` still resolves to a legacy
+# element while the input the applicant actually types into is a sibling with no
+# id, no name, and `aria-required` instead of `required`. Visible label text is
+# what a person reads, and it survives the redesigns that churn the markup.
+LABEL_FALLBACKS: list[tuple[str, str]] = [
+    ("First Name", "first_name"),
+    ("Last Name", "last_name"),
+    ("Full name", "full_name"),
+    ("Email", "email"),
+    ("Phone", "phone"),
+    ("LinkedIn", "linkedin"),
+    ("Website", "website"),
+    ("GitHub", "github"),
+]
+
 RESUME_SELECTORS = {
     "greenhouse": ["#resume", "input[type='file'][name*='resume']"],
     "lever": ["input[name='resume']", "input[type='file']"],
@@ -164,6 +180,70 @@ def _fill_first(page: Any, selectors: list[str], value: str) -> bool:
     return False
 
 
+def _fill_by_label(page: Any, label: str, value: str) -> bool:
+    """Fill the first visible input whose label contains `label`.
+
+    Only ever writes into an input that is currently empty, so this cannot undo
+    a correct value the selector pass already put there.
+    """
+    if not value:
+        return False
+    try:
+        locator = page.get_by_label(label, exact=False)
+        count = locator.count()
+    except Exception:
+        return False
+    # One label can resolve to several elements: Greenhouse keeps a legacy
+    # input alongside the one the applicant sees, and the selector pass has
+    # usually filled the legacy one already. Scan for the first that is both
+    # visible and still empty rather than assuming .first is the real one.
+    for index in range(min(count, 5)):
+        try:
+            candidate = locator.nth(index)
+            if not candidate.is_visible():
+                continue
+            if (candidate.input_value() or "").strip():
+                continue
+            candidate.fill(value)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def _wait_for_form(page: Any, ats: str, timeout_seconds: int) -> bool:
+    """Wait for the form itself, not just the document.
+
+    `domcontentloaded` fires before a React board has rendered anything, so
+    without this the fill pass runs against an empty page, finds none of its
+    fields, and the run aborts reporting a form that was simply not there yet.
+    """
+    budget = max(1, min(timeout_seconds, 20)) * 1000
+    for selector, _attribute in FIELD_MAP.get(ats, []):
+        try:
+            page.wait_for_selector(selector, state="visible", timeout=budget)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def _settle_after_upload(page: Any) -> None:
+    """Give a resume parser time to finish rewriting the form.
+
+    Greenhouse re-renders the name and email inputs once it has read the file.
+    Typing into them while that is in flight loses the value.
+    """
+    try:
+        page.wait_for_load_state("networkidle", timeout=15000)
+    except Exception:
+        pass
+    try:
+        page.wait_for_timeout(1500)
+    except Exception:
+        pass
+
+
 def _has_captcha(page: Any) -> bool:
     for marker in CAPTCHA_MARKERS:
         try:
@@ -175,20 +255,63 @@ def _has_captcha(page: Any) -> bool:
 
 
 def _unfilled_required(page: Any) -> list[str]:
-    """Required inputs still empty after our pass, excluding ones we won't answer."""
+    """Required inputs still empty after our pass, excluding ones we won't answer.
+
+    Naming these well is the whole value of the check. Whatever is left here is
+    what a human has to go and finish by hand, and "(unnamed)" sends them to a
+    screenshot to play spot-the-difference. Modern React form kits -- including
+    Greenhouse's current board -- render required inputs with no name, no id, no
+    label and no aria-label, so the fallbacks below walk outward through the DOM
+    looking for any text a person would recognize.
+    """
     try:
         return page.evaluate(
             """() => {
                 const skip = /gender|race|ethnic|veteran|disability|orientation|pronoun|self.?identif|voluntary|hispanic/i;
+                const clean = s => (s || '').replace(/\\s+/g, ' ').trim();
+
+                const describe = (el, index) => {
+                    const byLabel = el.labels && el.labels[0] ? el.labels[0].innerText : '';
+                    if (clean(byLabel)) return clean(byLabel);
+
+                    const aria = el.getAttribute('aria-label');
+                    if (clean(aria)) return clean(aria);
+
+                    const owner = el.getAttribute('aria-labelledby');
+                    if (owner) {
+                        const node = document.getElementById(owner);
+                        if (node && clean(node.innerText)) return clean(node.innerText);
+                    }
+                    if (clean(el.placeholder)) return clean(el.placeholder);
+                    if (clean(el.name)) return clean(el.name);
+                    if (clean(el.id)) return clean(el.id);
+
+                    const wrapper = el.closest('label');
+                    if (wrapper && clean(wrapper.innerText)) return clean(wrapper.innerText);
+
+                    // Walk up a few levels looking for the question text a
+                    // person would read above the box.
+                    let node = el.parentElement;
+                    for (let depth = 0; node && depth < 4; depth++, node = node.parentElement) {
+                        const label = node.querySelector('label, legend, [class*="label"]');
+                        if (label && clean(label.innerText)) return clean(label.innerText);
+                        depth++;
+                    }
+                    return `unlabelled ${el.type || el.tagName.toLowerCase()} field #${index + 1}`;
+                };
+
                 const out = [];
-                for (const el of document.querySelectorAll('input[required], select[required], textarea[required]')) {
-                    if (el.type === 'hidden' || el.disabled) continue;
-                    const label = (el.labels && el.labels[0] ? el.labels[0].innerText : '')
-                                  || el.getAttribute('aria-label') || el.name || el.id || '(unnamed)';
-                    if (skip.test(label)) continue;
+                const all = document.querySelectorAll(
+                    'input[required], select[required], textarea[required], ' +
+                    '[aria-required="true"]'
+                );
+                [...all].forEach((el, index) => {
+                    if (el.type === 'hidden' || el.disabled) return;
+                    const label = describe(el, index);
+                    if (skip.test(label)) return;
                     const empty = el.type === 'file' ? el.files.length === 0 : !el.value;
-                    if (empty) out.push(label.trim().slice(0, 60));
-                }
+                    if (empty) out.push(label.slice(0, 70));
+                });
                 return out;
             }"""
         )
@@ -234,6 +357,26 @@ def submit(
             page.set_default_timeout(config.timeout_seconds * 1000)
             page.goto(apply_url, wait_until="domcontentloaded")
 
+            # A board URL is not a promise about where you land. Plenty of
+            # companies point their Greenhouse board at their own careers site,
+            # and this tool is about to type someone's name, email, and phone
+            # number into whatever page it is looking at. Re-check the host
+            # after navigation and refuse anything we did not recognize.
+            landed = detect_ats(page.url)
+            if landed != ats:
+                page.screenshot(path=str(screenshot), full_page=True)
+                browser.close()
+                where = "an unrecognized site" if landed == "unknown" else landed
+                return DispatchResult(
+                    False,
+                    "ats_form",
+                    f"{apply_url} redirected to {where} ({page.url}). Refusing to enter "
+                    "personal details on a page this tool cannot identify -- apply by hand.",
+                    artifacts=[str(screenshot)],
+                )
+
+            _wait_for_form(page, ats, config.timeout_seconds)
+
             if _has_captcha(page):
                 page.screenshot(path=str(screenshot), full_page=True)
                 browser.close()
@@ -245,10 +388,12 @@ def submit(
                 )
 
             filled: list[str] = []
-            for selector, attribute in FIELD_MAP.get(ats, []):
-                if _fill_first(page, [selector], getattr(fields, attribute, "")):
-                    filled.append(attribute)
 
+            # The resume goes first, deliberately. Greenhouse parses the upload
+            # and writes its own guesses at name and email into the form, which
+            # discards anything typed beforehand. Uploading first means the
+            # parser runs first and the values below overwrite it -- the record
+            # in the database wins over a guess made from a PDF.
             if fields.resume_path:
                 for selector in RESUME_SELECTORS.get(ats, []):
                     try:
@@ -259,6 +404,18 @@ def submit(
                             break
                     except Exception:
                         continue
+                _settle_after_upload(page)
+
+            for selector, attribute in FIELD_MAP.get(ats, []):
+                if _fill_first(page, [selector], getattr(fields, attribute, "")):
+                    filled.append(attribute)
+
+            # Then by visible label, for the fields the selectors could not
+            # reach. `_fill_by_label` skips anything already holding a value, so
+            # this only ever adds.
+            for label, attribute in LABEL_FALLBACKS:
+                if _fill_by_label(page, label, getattr(fields, attribute, "")):
+                    filled.append(f"{attribute} (by label)")
 
             if fields.cover_letter_text:
                 if _fill_first(page, COVER_LETTER_SELECTORS.get(ats, []), fields.cover_letter_text):
@@ -266,6 +423,20 @@ def submit(
 
             page.screenshot(path=str(screenshot), full_page=True)
             artifacts.append(str(screenshot))
+
+            # Nothing matched. The page is not the form we expected, so the
+            # "no outstanding required fields" check below would be answering a
+            # question about a page with no fields in it -- which reads as
+            # success and walks on to click submit.
+            if not filled:
+                browser.close()
+                return DispatchResult(
+                    False,
+                    "ats_form",
+                    f"none of the expected {ats} fields were on the page -- its layout has "
+                    "changed, or the posting applies somewhere else. Apply by hand.",
+                    artifacts=artifacts,
+                )
 
             outstanding = _unfilled_required(page)
             if outstanding:

@@ -190,11 +190,16 @@ def write_pdf(html_path: Path) -> tuple[Path | None, str]:
     """Best-effort PDF. Returns (path, message); path is None if no engine is available."""
     pdf_path = html_path.with_suffix(".pdf")
 
+    # Each engine is tried in turn. A failure is recorded and the next one gets a
+    # go: installing Playwright for ATS submission must not disable a weasyprint
+    # that was working, and "chromium not downloaded yet" is exactly that case.
+    failures: list[str] = []
+
     result, message = _playwright_pdf(html_path, pdf_path)
     if result:
         return result, message
     if message:
-        return None, message
+        failures.append(message)
 
     try:
         from weasyprint import HTML  # type: ignore
@@ -204,7 +209,7 @@ def write_pdf(html_path: Path) -> tuple[Path | None, str]:
     except ImportError:
         pass
     except Exception as exc:  # engine present but unhappy
-        return None, f"weasyprint failed: {exc}"
+        failures.append(f"weasyprint failed: {exc}")
 
     wkhtmltopdf = shutil.which("wkhtmltopdf")
     if wkhtmltopdf:
@@ -216,7 +221,13 @@ def write_pdf(html_path: Path) -> tuple[Path | None, str]:
             )
             return pdf_path, "rendered with wkhtmltopdf"
         except subprocess.CalledProcessError as exc:
-            return None, f"wkhtmltopdf failed: {exc.stderr.decode(errors='replace')[:200]}"
+            failures.append(f"wkhtmltopdf failed: {exc.stderr.decode(errors='replace')[:200]}")
+
+    if failures:
+        # Every engine that was present failed. Say which and why -- the usual
+        # cause is Playwright installed without `playwright install chromium`,
+        # and its own error names the command to fix it.
+        return None, "no PDF produced. " + " | ".join(failures)
 
     return None, (
         "no PDF engine found -- open the .html file in a browser and print to PDF "
