@@ -25,32 +25,40 @@ NAV = (
 )
 
 STYLESHEET = """
+/* Four colours, nothing else: black, white, royal blue, royal red.
+   Separation between surfaces is done with black or white at low alpha rather
+   than with greys, so no fifth hue enters through the back door. Blue carries
+   everything affirmative (accent, good, progress); red carries everything that
+   warns or refuses. */
 :root {
   color-scheme: light dark;
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --text: #14171c;
-  --muted: #666e7a;
-  --border: #d9dde3;
-  --accent: #2a6df4;
-  --good: #1a7f45;
-  --warn: #9a6400;
-  --bad: #b3261e;
+  --black: #000000;
+  --white: #ffffff;
+  --royal-blue: #4169e1;
+  --royal-red: #c8102e;
+
+  --bg: var(--white);
+  --surface: var(--white);
+  --surface-2: rgba(0, 0, 0, .045);
+  --text: var(--black);
+  --muted: rgba(0, 0, 0, .58);
+  --border: rgba(0, 0, 0, .16);
+  --accent: var(--royal-blue);
+  --good: var(--royal-blue);
+  --warn: var(--royal-red);
+  --bad: var(--royal-red);
+  --on-accent: var(--white);
   --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14171c;
-    --surface: #1c2027;
-    --surface-2: #232830;
-    --text: #e6e9ee;
-    --muted: #98a1ad;
-    --border: #2f3742;
-    --accent: #6ea3ff;
-    --good: #4ac97e;
-    --warn: #e0aa3e;
-    --bad: #ff6b60;
+    --bg: var(--black);
+    --surface: var(--black);
+    --surface-2: rgba(255, 255, 255, .07);
+    --text: var(--white);
+    --muted: rgba(255, 255, 255, .62);
+    --border: rgba(255, 255, 255, .2);
+    --on-accent: var(--white);
   }
 }
 * { box-sizing: border-box; }
@@ -114,7 +122,7 @@ button, .btn {
   border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
 }
 button:hover, .btn:hover { border-color: var(--accent); text-decoration: none; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 button.danger { color: var(--bad); }
 form.inline { display: inline; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
@@ -143,7 +151,7 @@ textarea, select {
   border: 1px solid var(--border); border-radius: 7px;
 }
 input:focus, textarea:focus, select:focus {
-  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(42,109,244,.16);
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(65, 105, 225, .28);
 }
 textarea { resize: vertical; min-height: 68px; font-family: inherit; }
 .field .hint { font-size: 12px; color: var(--muted); }
@@ -161,7 +169,7 @@ textarea { resize: vertical; min-height: 68px; font-family: inherit; }
 .answer-row:last-child { border-bottom: none; }
 .answer-row .pattern { font-family: var(--mono); font-size: 13px; }
 .answer-row .value { color: var(--muted); font-size: 14px; margin-top: 2px; }
-.count { font-family: var(--mono); color: var(--warn); font-weight: 600; }
+.count { font-family: var(--mono); color: var(--royal-red); font-weight: 700; }
 """
 
 
