@@ -18,7 +18,8 @@ NAV = (
     ("/", "Dashboard"),
     ("/jobs", "Jobs"),
     ("/queue", "Queue"),
-    ("/profile", "Profile"),
+    ("/profile/build", "History"),
+    ("/profile/edit", "Details"),
     ("/answers", "Answers"),
     ("/review", "Review"),
     ("/runs", "Runs"),
@@ -170,6 +171,25 @@ textarea { resize: vertical; min-height: 68px; font-family: inherit; }
 .answer-row .pattern { font-family: var(--mono); font-size: 13px; }
 .answer-row .value { color: var(--muted); font-size: 14px; margin-top: 2px; }
 .count { font-family: var(--mono); color: var(--royal-red); font-weight: 700; }
+
+/* -- profile builder ---------------------------------------------------- */
+.row-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 14px; margin-bottom: 8px;
+}
+.ach { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.ach .muted { font-size: 13px; }
+.impact {
+  font-size: 12px; font-family: var(--mono); color: var(--royal-blue); margin-top: 2px;
+}
+details > summary {
+  cursor: pointer; font-size: 13px; color: var(--accent);
+  margin-top: 10px; list-style: none;
+}
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "+ "; }
+details[open] > summary::before { content: "\\2212 "; }
+details[open] > summary { margin-bottom: 12px; }
 """
 
 

@@ -96,6 +96,8 @@ class App:
                 return 200, pages.profile(conn)
             if parts == ["profile", "edit"]:
                 return 200, pages.profile_edit(conn, self.token)
+            if parts == ["profile", "build"]:
+                return 200, pages.profile_build(conn, self.token)
             if parts == ["answers"]:
                 return 200, pages.answers_page(conn, self.token)
             if parts == ["review"]:
@@ -134,6 +136,15 @@ class App:
                 return 303, "/answers"
             if parts == ["profile", "save"]:
                 return self._save_profile(conn, fields)
+            if len(parts) == 3 and parts[0] == "profile" and parts[2] == "add":
+                return self._add_entity(conn, parts[1], fields)
+            if (
+                len(parts) == 4
+                and parts[0] == "profile"
+                and parts[2].isdigit()
+                and parts[3] == "delete"
+            ):
+                return self._delete_entity(conn, parts[1], int(parts[2]))
             if len(parts) == 4 and parts[0] == "profile" and parts[1] == "attr" and parts[3] == "delete":
                 db.delete_profile_field(conn, parts[2])
                 conn.commit()
@@ -165,6 +176,131 @@ class App:
         except ValueError as exc:
             return _page("Not stored", str(exc), 400)
         return 303, "/answers"
+
+    # Which tables the builder page may write, and the delete confirmation each
+    # needs. An allow-list, not a passthrough: the entity name arrives in the
+    # URL, and without this a crafted path could reach any table in the schema.
+    BUILDER_TABLES = {
+        "experience": "experiences",
+        "achievement": "achievements",
+        "education": "education",
+        "project": "projects",
+        "certification": "certifications",
+        "skill": "skills",
+    }
+
+    def _add_entity(
+        self, conn: sqlite3.Connection, entity: str, fields: dict[str, str]
+    ) -> tuple[int, str]:
+        """Add one row to the profile graph from the builder page.
+
+        Rows entered here are marked verified, because a person typed them. That
+        is the same standing a LinkedIn export gets and a stronger one than
+        anything a model extracted from a document.
+        """
+        def value(name: str) -> str:
+            return (fields.get(name) or "").strip()
+
+        title = value("title")
+        skills = [s.strip() for s in value("skills").split(",") if s.strip()]
+
+        try:
+            if entity == "experience":
+                if not title:
+                    return _page("Not added", "A position needs a title.", 400)
+                row_id = db.insert_row(conn, "experiences", {
+                    "organization_id": db.upsert_organization(conn, value("org"), kind="company"),
+                    "title": title,
+                    "employment_type": value("type"),
+                    "location": value("location"),
+                    "start_date": value("start"),
+                    "end_date": value("end"),
+                    "is_current": 0 if value("end") else 1,
+                    "verified": 1,
+                })
+                db.link_skills_to(conn, skills, "experience", row_id, verified=1)
+
+            elif entity == "achievement":
+                # Exactly one parent, which the schema enforces with a CHECK.
+                # The form only ever posts a position, so a missing one is a bug
+                # rather than something to guess a parent for.
+                parent = (fields.get("experience_id") or "").strip()
+                if not parent.isdigit():
+                    return _page(
+                        "Not added",
+                        "An accomplishment has to belong to a position, project, or degree.",
+                        400,
+                    )
+                if not title:
+                    return _page("Not added", "An accomplishment needs a title.", 400)
+                row_id = db.insert_row(conn, "achievements", {
+                    "experience_id": int(parent),
+                    "title": title,
+                    "description": value("description") or title,
+                    "quantified_impact": value("impact") or None,
+                    "verified": 1,
+                })
+                db.link_skills_to(conn, skills, "achievement", row_id, verified=1)
+
+            elif entity == "education":
+                if not title:
+                    return _page("Not added", "A degree needs a name.", 400)
+                db.insert_row(conn, "education", {
+                    "organization_id": db.upsert_organization(conn, value("org"), kind="school"),
+                    "degree": title,
+                    "field_of_study": value("field"),
+                    "start_date": value("start"),
+                    "end_date": value("end"),
+                    "verified": 1,
+                })
+
+            elif entity == "project":
+                if not title:
+                    return _page("Not added", "A project needs a name.", 400)
+                row_id = db.insert_row(conn, "projects", {
+                    "name": title,
+                    "description": value("description"),
+                    "role": value("role"),
+                    "url": value("url"),
+                    "verified": 1,
+                })
+                db.link_skills_to(conn, skills, "project", row_id, verified=1)
+
+            elif entity == "certification":
+                if not title:
+                    return _page("Not added", "A certification needs a name.", 400)
+                db.insert_row(conn, "certifications", {
+                    "name": title,
+                    "issuer": value("org"),
+                    "issue_date": value("start"),
+                    "url": value("url"),
+                    "verified": 1,
+                })
+
+            elif entity == "skill":
+                name = value("name")
+                if not name:
+                    return _page("Not added", "A skill needs a name.", 400)
+                db.upsert_skill(conn, name, proficiency=value("proficiency") or None, verified=1)
+
+            else:
+                return _page("Not found", f"Cannot add '{entity}'.", 404)
+        except sqlite3.IntegrityError as exc:
+            return _page("Not added", f"The database refused that row: {exc}", 400)
+
+        conn.commit()
+        return 303, "/profile/build"
+
+    def _delete_entity(
+        self, conn: sqlite3.Connection, entity: str, row_id: int
+    ) -> tuple[int, str]:
+        table = self.BUILDER_TABLES.get(entity)
+        if not table:
+            return _page("Not found", f"Cannot delete '{entity}'.", 404)
+        if not db.delete_row(conn, table, row_id):
+            return _page("Not found", f"No {entity} {row_id}.", 404)
+        conn.commit()
+        return 303, "/profile/build"
 
     def _save_profile(self, conn: sqlite3.Connection, fields: dict[str, str]) -> tuple[int, str]:
         """Write the profile form back.

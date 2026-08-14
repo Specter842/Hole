@@ -740,4 +740,261 @@ def profile_edit(conn: sqlite3.Connection, token: str) -> str:
         )
         + "</div>"
     )
-    return layout("Your details", body, active="/profile")
+    return layout("Your details", body, active="/profile/edit")
+
+
+# --------------------------------------------------------------------------- profile builder
+
+
+def _dates(start: Any, end: Any, current: Any = 0) -> str:
+    start = esc(start) or "?"
+    if current and not end:
+        return f"{start} &ndash; present"
+    return f"{start} &ndash; {esc(end) or 'present'}"
+
+
+def _delete(entity: str, row_id: Any, token: str, what: str) -> str:
+    return form_button(
+        f"/profile/{entity}/{row_id}/delete", "Delete", token,
+        style="danger", confirm=f"Delete {what}? This cannot be undone.",
+    )
+
+
+def profile_build(conn: sqlite3.Connection, token: str) -> str:
+    """Enter your history here; resumes are generated from it.
+
+    Laid out the way the graph is actually shaped: accomplishments sit under the
+    position they happened at, because that is the constraint the schema
+    enforces and the reason a generated resume can place a bullet under the
+    right employer without the model guessing.
+    """
+    graph = graph_module.ProfileGraph.load(conn)
+    body = "<h1>Your history</h1>"
+    body += (
+        '<p class="muted">Everything a resume is built from. Nothing here is generated -- '
+        "tailoring selects from these rows and writes prose for them, it never adds a fact "
+        "that is not on this page.</p>"
+    )
+
+    counts = graph.counts()
+    unevidenced = db.unevidenced_skills(conn)
+    if not graph.experiences:
+        body += notice(
+            "No positions yet. Add one below, then add the things you did there -- "
+            "an accomplishment has to belong to a position, project, or degree.",
+            tone="warn",
+        )
+
+    # ---------------------------------------------------------------- positions
+    body += "<h2>Positions</h2>"
+    for node in graph.experiences:
+        record = node.row
+        exp_id = record.get("id")
+        header = (
+            f'<div class="row-head"><div>'
+            f'<strong>{esc(record.get("title"))}</strong>'
+            f'{" &middot; " + esc(record.get("organization")) if record.get("organization") else ""}'
+            f'<div class="muted" style="font-size:13px">'
+            f'{_dates(record.get("start_date"), record.get("end_date"), record.get("is_current"))}'
+            f'{" &middot; " + esc(record.get("location")) if record.get("location") else ""}</div>'
+            f"</div>{_delete('experience', exp_id, token, 'this position and everything under it')}</div>"
+        )
+        bullets = ""
+        for achievement in node.achievements:
+            impact = achievement.row.get("quantified_impact")
+            title = str(achievement.row.get("title") or "")
+            detail = str(achievement.row.get("description") or "")
+            # Imports often store a truncated title alongside the full sentence
+            # it was cut from, and printing both reads as a stutter. Show the
+            # detail only when it says something the title does not.
+            if detail.startswith(title[:40]) and len(title) >= 40:
+                title, detail = detail, ""
+            elif detail == title:
+                detail = ""
+            bullets += (
+                '<li><div class="ach">'
+                f"<div><strong>{esc(title)}</strong>"
+                + (f'<div class="muted">{esc(detail)}</div>' if detail else "")
+                + (f'<div class="impact">{esc(impact)}</div>' if impact else "")
+                + "</div>"
+                + _delete("achievement", achievement.row.get("id"), token, "this accomplishment")
+                + "</div></li>"
+            )
+        bullets = f'<ul class="tight">{bullets}</ul>' if bullets else (
+            '<p class="muted" style="font-size:13px">No accomplishments yet. '
+            "These are what a resume is actually made of.</p>"
+        )
+        add = form(
+            "/profile/achievement/add",
+            token,
+            f'<input type="hidden" name="experience_id" value="{esc(exp_id)}">'
+            + '<div class="grid2">'
+            + field("title", "What you did", "", placeholder="Rebuilt the checkout API")
+            + field("impact", "Measurable result (optional)", "",
+                    placeholder="cut p95 latency 40%",
+                    hint="Only a number you can point at. Invented metrics are what grounding catches.")
+            + "</div>"
+            + field("description", "Detail", "", kind="textarea", rows=2,
+                    placeholder="What the work was, in a sentence or two.")
+            + field("skills", "Skills used (comma separated)", "",
+                    placeholder="Python, PostgreSQL",
+                    hint="Each becomes evidence that you have used that skill."),
+            "Add accomplishment",
+        )
+        body += f'<div class="card">{header}{bullets}<details><summary>Add accomplishment</summary>{add}</details></div>'
+
+    body += (
+        '<div class="card"><h3>Add a position</h3>'
+        + form(
+            "/profile/experience/add",
+            token,
+            '<div class="grid2">'
+            + field("title", "Title", "", placeholder="Senior Software Engineer")
+            + field("org", "Company", "", placeholder="Acme Corp")
+            + field("start", "Started", "", placeholder="2021-03")
+            + field("end", "Ended", "", placeholder="leave blank if current")
+            + field("location", "Location", "", placeholder="Austin, TX")
+            + field("type", "Employment type", "full-time",
+                    kind="select",
+                    options=["full-time", "part-time", "contract", "internship", "freelance"])
+            + "</div>"
+            + field("skills", "Skills (comma separated)", "", placeholder="Python, AWS"),
+            "Add position",
+        )
+        + "</div>"
+    )
+
+    # ---------------------------------------------------------------- education
+    body += "<h2>Education</h2>"
+    for record in db.list_education(conn):
+        body += (
+            '<div class="card"><div class="row-head"><div>'
+            f'<strong>{esc(record.get("degree"))}</strong>'
+            f'{" &middot; " + esc(record.get("organization")) if record.get("organization") else ""}'
+            f'<div class="muted" style="font-size:13px">'
+            f'{esc(record.get("field_of_study"))} {_dates(record.get("start_date"), record.get("end_date"))}</div>'
+            "</div>"
+            + _delete("education", record.get("id"), token, "this degree")
+            + "</div></div>"
+        )
+    body += (
+        '<div class="card"><h3>Add education</h3>'
+        + form(
+            "/profile/education/add",
+            token,
+            '<div class="grid2">'
+            + field("title", "Degree", "", placeholder="BS Computer Science")
+            + field("org", "School", "", placeholder="University of Texas")
+            + field("field", "Field of study", "", placeholder="Computer Science")
+            + field("start", "Started", "", placeholder="2015")
+            + field("end", "Finished", "", placeholder="2019")
+            + "</div>",
+            "Add education",
+        )
+        + "</div>"
+    )
+
+    # ---------------------------------------------------------------- projects
+    body += "<h2>Projects</h2>"
+    for node in graph.projects:
+        record = node.row
+        body += (
+            '<div class="card"><div class="row-head"><div>'
+            f'<strong>{esc(record.get("name"))}</strong>'
+            f'<div class="muted" style="font-size:13px">{esc(record.get("description"))}</div></div>'
+            + _delete("project", record.get("id"), token, "this project")
+            + "</div></div>"
+        )
+    body += (
+        '<div class="card"><h3>Add a project</h3>'
+        + form(
+            "/profile/project/add",
+            token,
+            '<div class="grid2">'
+            + field("title", "Name", "", placeholder="Open-source scheduler")
+            + field("role", "Your role", "", placeholder="Creator")
+            + field("url", "Link", "", placeholder="https://github.com/...")
+            + field("skills", "Skills (comma separated)", "", placeholder="Go, Kubernetes")
+            + "</div>"
+            + field("description", "What it is", "", kind="textarea", rows=2),
+            "Add project",
+        )
+        + "</div>"
+    )
+
+    # ---------------------------------------------------------------- certifications
+    body += "<h2>Certifications</h2>"
+    for record in db.rows_to_dicts(conn.execute("SELECT * FROM certifications ORDER BY IFNULL(issue_date, '') DESC")):
+        body += (
+            '<div class="card"><div class="row-head"><div>'
+            f'<strong>{esc(record.get("name"))}</strong>'
+            f'{" &middot; " + esc(record.get("issuer")) if record.get("issuer") else ""}'
+            f'<div class="muted" style="font-size:13px">{esc(record.get("issue_date"))}</div></div>'
+            + _delete("certification", record.get("id"), token, "this certification")
+            + "</div></div>"
+        )
+    body += (
+        '<div class="card"><h3>Add a certification</h3>'
+        + form(
+            "/profile/certification/add",
+            token,
+            '<div class="grid2">'
+            + field("title", "Name", "", placeholder="AWS Solutions Architect")
+            + field("org", "Issuer", "", placeholder="Amazon Web Services")
+            + field("start", "Issued", "", placeholder="2024-06")
+            + field("url", "Credential link", "", placeholder="https://...")
+            + "</div>",
+            "Add certification",
+        )
+        + "</div>"
+    )
+
+    # ---------------------------------------------------------------- skills
+    body += "<h2>Skills</h2>"
+    evidenced = graph.evidenced_skills
+    body += (
+        f'<p class="muted">{len(evidenced)} with evidence, {len(unevidenced)} without. '
+        "A skill with no evidence never reaches a resume, however loudly a posting asks "
+        "for it -- attach it to a position or accomplishment above to make it usable.</p>"
+    )
+    if evidenced:
+        body += '<div class="card">' + " ".join(
+            pill(f'{esc(s.get("name"))} &middot; {s.get("evidence_count", 0)}', "good")
+            for s in evidenced[:80]
+        ) + "</div>"
+    if unevidenced:
+        body += (
+            '<div class="card">'
+            + notice(
+                "These are claimed but nothing proves them, so they stay off every resume:",
+                [str(s.get("name")) for s in unevidenced[:40]],
+                tone="warn",
+            )
+            + "</div>"
+        )
+
+    body += (
+        '<div class="card"><h3>Add a skill</h3>'
+        '<p class="muted">Adding a skill here records the claim. It only becomes usable '
+        "once something demonstrates it -- list it on a position or accomplishment above, "
+        "or run <span class=\"mono\">jobsearch link</span> to scan your records for it.</p>"
+        + form(
+            "/profile/skill/add",
+            token,
+            '<div class="grid2">'
+            + field("name", "Skill", "", placeholder="PostgreSQL")
+            + field("proficiency", "Proficiency", "working", kind="select",
+                    options=["familiar", "working", "advanced", "expert"])
+            + "</div>",
+            "Add skill",
+        )
+        + "</div>"
+    )
+
+    body += (
+        f'<p class="muted" style="margin-top:26px">'
+        f'{counts.get("experiences", 0)} positions &middot; '
+        f'{counts.get("accomplishments", 0)} accomplishments &middot; '
+        f'{counts.get("skills", 0)} skills</p>'
+    )
+    return layout("Your history", body, active="/profile/build")
