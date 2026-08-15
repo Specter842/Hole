@@ -125,6 +125,45 @@ class EmptyStateTests(unittest.TestCase):
         self.assertEqual(data["rows"], [["a", 0.0], ["b", 0.0]])
 
 
+class ProgressiveEnhancementTests(unittest.TestCase):
+    """Scroll-reveal must never be a requirement for content to be visible.
+
+    Caught by a full-page screenshot before real scroll events had ever fired:
+    every `.rise` section past the fold was blank. The CSS was hiding content
+    unconditionally, with only the inline script able to reveal it -- so a
+    browser where that script never runs (disabled, blocked, thrown, or just
+    slow) is left with entire sections invisible forever, not just unanimated.
+    The fix inverts which side does the hiding: content is visible by default,
+    and the script may only ever add the hidden state right before it starts
+    watching for the reveal.
+    """
+
+    def test_bare_rise_is_never_hidden_by_css(self) -> None:
+        from jobsearch.web.html import STYLESHEET
+
+        self.assertNotIn(".rise {\n  opacity: 0", STYLESHEET)
+        self.assertNotIn(".bubble.rise { opacity: 0", STYLESHEET)
+
+    def test_hiding_is_scoped_to_the_pending_state(self) -> None:
+        from jobsearch.web.html import STYLESHEET
+
+        self.assertIn(".rise.pending {", STYLESHEET)
+        self.assertIn("opacity: 0", STYLESHEET.split(".rise.pending {", 1)[1][:80])
+
+    def test_the_reduced_motion_and_no_observer_path_never_adds_pending(self) -> None:
+        # That early return has to leave the DOM untouched -- if it added
+        # 'pending' without also guaranteeing 'in' gets added synchronously,
+        # this path would reintroduce the exact bug the split was meant to fix.
+        branch = SITE_JS.split("function reveal() {", 1)[1].split("if (reduceMotion", 1)[1]
+        early_return = branch.split("return;", 1)[0]
+        self.assertNotIn("classList.add('pending')", early_return)
+
+    def test_pending_is_added_only_alongside_observing(self) -> None:
+        reveal_fn = SITE_JS.split("function reveal() {", 1)[1].split("\n  }\n", 1)[0]
+        self.assertIn("classList.add('pending')", reveal_fn)
+        self.assertIn("io.observe(n)", reveal_fn)
+
+
 class EngineTests(unittest.TestCase):
     """Properties of the client-side engine that must not be edited away."""
 

@@ -334,7 +334,155 @@ SITE_JS = r"""
     };
   }
 
-  var KINDS = { columns: columns, bars: bars, line: line, split: split };
+  // ---------------------------------------------------------------- donut
+  function donut(host, data) {
+    var size = Math.min(host.clientWidth || 260, 260);
+    var W = size, H = size;
+    var r = size * 0.36, cx = W / 2, cy = H / 2;
+    var stroke = size * 0.13;
+    var circumference = 2 * Math.PI * r;
+    var total = data.rows[0][1] + data.rows[1][1];
+    var leftFrac = total ? data.rows[0][1] / total : 0;
+
+    var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, 'class': 'plot donut', role: 'img',
+                          'aria-label': data.title || '' });
+
+    // Track first, so the ring always reads as a whole even before either
+    // colour is drawn -- the same "track behind the mark" idea as the bars.
+    svg.appendChild(el('circle', {
+      cx: cx, cy: cy, r: r, fill: 'none', stroke: 'rgba(255,255,255,.08)',
+      'stroke-width': stroke
+    }));
+
+    [
+      { frac: leftFrac, offset: 0, colour: BLUE, row: data.rows[0] },
+      { frac: 1 - leftFrac, offset: leftFrac, colour: RED, row: data.rows[1] }
+    ].forEach(function (slice, i) {
+      if (slice.frac <= 0) return;
+      var len = circumference * slice.frac;
+      // A 2px surface-colour ring between the two slices, the same spacer used
+      // for touching bars -- drawn as a small gap in the dash rather than a
+      // stroke, so it costs no extra ink.
+      var gapPx = data.rows[0][1] > 0 && data.rows[1][1] > 0 ? 2 : 0;
+      var arc = el('circle', {
+        cx: cx, cy: cy, r: r, fill: 'none', stroke: slice.colour,
+        'stroke-width': stroke, 'stroke-linecap': 'butt', 'class': 'mark',
+        'stroke-dasharray': Math.max(len - gapPx, 0) + ' ' + (circumference - len + gapPx),
+        'stroke-dashoffset': -slice.offset * circumference,
+        transform: 'rotate(-90 ' + cx + ' ' + cy + ')'
+      });
+      if (!reduceMotion) {
+        arc.style.strokeDasharray = '0 ' + circumference;
+        arc.style.transition = 'stroke-dasharray .9s cubic-bezier(.22,.9,.3,1) ' + (i * 120) + 'ms';
+        arc.setAttribute('data-final', Math.max(len - gapPx, 0) + ' ' + (circumference - len + gapPx));
+      }
+      arc.addEventListener('mousemove', function (e) {
+        showTip('<b>' + Math.round(slice.frac * 100) + '%</b><span>' + slice.row[0] + '  ' +
+                fmt(slice.row[1]) + '</span>', e.clientX, e.clientY);
+      });
+      arc.addEventListener('mouseleave', hideTip);
+      svg.appendChild(arc);
+    });
+
+    var pct = el('text', { x: cx, y: cy - 3, 'text-anchor': 'middle', 'class': 'donut-pct' });
+    pct.textContent = Math.round(leftFrac * 100) + '%';
+    svg.appendChild(pct);
+    var sub = el('text', { x: cx, y: cy + 16, 'text-anchor': 'middle', 'class': 'donut-sub' });
+    sub.textContent = data.rows[0][0];
+    svg.appendChild(sub);
+
+    var wrap = document.createElement('div');
+    wrap.className = 'donut-wrap';
+    wrap.appendChild(svg);
+    var legend = document.createElement('div');
+    legend.className = 'donut-legend';
+    data.rows.forEach(function (row, i) {
+      var item = document.createElement('span');
+      item.innerHTML = '<i style="background:' + (i === 0 ? BLUE : RED) + '"></i>' +
+        row[0] + ' <b>' + fmt(row[1]) + '</b>';
+      legend.appendChild(item);
+    });
+    wrap.appendChild(legend);
+    host.appendChild(wrap);
+
+    return function () {
+      svg.querySelectorAll('.mark').forEach(function (m) {
+        m.style.strokeDasharray = m.getAttribute('data-final');
+      });
+    };
+  }
+
+  // ---------------------------------------------------------------- heatmap
+  function heatmap(host, data) {
+    var W = host.clientWidth || 900;
+    var rowLabelW = 92, cellGap = 3;
+    var cols = data.cols.length, rows = data.rows.length;
+    var cell = Math.min(46, Math.floor((W - rowLabelW - cellGap * (cols - 1)) / cols));
+    var H = rows * (cell + cellGap) - cellGap + 24;
+    var gridW = cols * (cell + cellGap) - cellGap;
+
+    var top = 0;
+    data.grid.forEach(function (row) { row.forEach(function (v) { if (v > top) top = v; }); });
+
+    // Five steps, GitHub-contribution style: on a dark surface "more" reads as
+    // more opaque blue, not darker -- the sequential ramp runs toward the hue,
+    // not toward black, since black already IS zero here.
+    var STEPS = [0, .16, .38, .64, 1];
+    function stepFor(v) {
+      if (!v) return 0;
+      var frac = top ? v / top : 0;
+      for (var i = 1; i < STEPS.length; i++) if (frac <= STEPS[i] || i === STEPS.length - 1) return i;
+      return STEPS.length - 1;
+    }
+
+    var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, 'class': 'plot', role: 'img',
+                          'aria-label': data.title || '' });
+
+    data.rows.forEach(function (rowLabel, ri) {
+      var label = el('text', {
+        x: rowLabelW - 10, y: ri * (cell + cellGap) + cell / 2 + 4, 'text-anchor': 'end', 'class': 'cat'
+      });
+      label.textContent = rowLabel;
+      svg.appendChild(label);
+
+      data.cols.forEach(function (colLabel, ci) {
+        var v = data.grid[ri][ci];
+        var step = stepFor(v);
+        var x = rowLabelW + ci * (cell + cellGap), y = ri * (cell + cellGap);
+        var rect = el('rect', {
+          x: x, y: y, width: cell, height: cell, rx: 3,
+          fill: BLUE, 'fill-opacity': STEPS[step] === 0 ? 0.05 : STEPS[step], 'class': 'mark hm-cell'
+        });
+        if (!reduceMotion) {
+          rect.style.opacity = 0;
+          rect.style.transition = 'opacity .5s ease ' + ((ri * cols + ci) * 14) + 'ms';
+          rect.setAttribute('data-op', '1');
+        }
+        rect.addEventListener('mousemove', function (e) {
+          showTip('<b>' + fmt(v) + '</b><span>' + rowLabel + '  ·  ' + colLabel + '</span>',
+                  e.clientX, e.clientY);
+        });
+        rect.addEventListener('mouseleave', hideTip);
+        svg.appendChild(rect);
+      });
+    });
+
+    data.cols.forEach(function (colLabel, ci) {
+      var t = el('text', {
+        x: rowLabelW + ci * (cell + cellGap) + cell / 2, y: H - 6,
+        'text-anchor': 'middle', 'class': 'tick'
+      });
+      t.textContent = colLabel;
+      svg.appendChild(t);
+    });
+
+    host.appendChild(svg);
+    return function () {
+      svg.querySelectorAll('.hm-cell').forEach(function (m) { m.style.opacity = m.getAttribute('data-op') || 1; });
+    };
+  }
+
+  var KINDS = { columns: columns, bars: bars, line: line, split: split, donut: donut, heatmap: heatmap };
 
   // ---------------------------------------------------------------- boot
   function draw(host) {
@@ -384,10 +532,10 @@ SITE_JS = r"""
 
   // ---------------------------------------------------------------- motion
   function reveal() {
-    if (reduceMotion || !window.IntersectionObserver) {
-      document.querySelectorAll('.rise').forEach(function (n) { n.classList.add('in'); });
-      return;
-    }
+    // Reduced motion, or no observer support: leave every `.rise` node exactly
+    // as the server sent it -- fully visible, no `.pending` added. Nothing to
+    // animate means nothing to hide first.
+    if (reduceMotion || !window.IntersectionObserver) return;
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         if (entry.isIntersecting) {
@@ -396,7 +544,14 @@ SITE_JS = r"""
         }
       });
     }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
-    document.querySelectorAll('.rise').forEach(function (n) { io.observe(n); });
+    document.querySelectorAll('.rise').forEach(function (n) {
+      // Mark it hidden-until-shown only now, immediately before observing, so
+      // there is no window where the element is hidden but nothing is
+      // watching it -- and so a script that fails to reach this line at all
+      // (blocked, thrown, disabled) never hides anything in the first place.
+      n.classList.add('pending');
+      io.observe(n);
+    });
   }
 
   function countUp() {

@@ -1031,6 +1031,63 @@ def _by_source(conn: sqlite3.Connection) -> list[tuple[str, float]]:
     return [(str(r["source"]), float(r["n"])) for r in rows]
 
 
+def _by_location(conn: sqlite3.Connection, *, limit: int = 8) -> list[tuple[str, float]]:
+    """Top raw location strings, most-listed first.
+
+    Not normalized -- a Greenhouse posting open to three cities reports all
+    three in one string, and collapsing that into "one location" would claim a
+    precision the posting itself does not have.
+    """
+    rows = conn.execute(
+        "SELECT location, COUNT(*) AS n FROM jobs "
+        "WHERE location IS NOT NULL AND location != '' "
+        "GROUP BY location ORDER BY n DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [(str(r["location"])[:46], float(r["n"])) for r in rows]
+
+
+def _remote_split(conn: sqlite3.Connection) -> tuple[float, float]:
+    row = conn.execute(
+        "SELECT SUM(remote) AS remote, COUNT(*) AS total FROM jobs"
+    ).fetchone()
+    remote = float(row["remote"] or 0)
+    total = float(row["total"] or 0)
+    return remote, total - remote
+
+
+def _fit_by_source(
+    conn: sqlite3.Connection, *, top_sources: int = 5
+) -> tuple[list[str], list[str], dict[tuple[str, str], float]]:
+    """Fit-score density per source: which boards actually match this profile.
+
+    Bands run in fixed order (0-10 first) rather than by count, because a
+    heatmap's columns are an axis, not a ranking -- reordering them by size
+    would make the grid unreadable as a distribution.
+    """
+    sources = [
+        str(r["source"])
+        for r in conn.execute(
+            "SELECT source, COUNT(*) n FROM jobs GROUP BY source ORDER BY n DESC LIMIT ?",
+            (top_sources,),
+        )
+    ]
+    bands = [f"{low}" for low in range(0, 100, 10)]
+    cells: dict[tuple[str, str], float] = {}
+    if sources:
+        placeholders = ",".join("?" * len(sources))
+        rows = conn.execute(
+            f"SELECT source, CAST(fit_score / 10 AS INTEGER) AS band, COUNT(*) AS n "
+            f"FROM jobs WHERE fit_score IS NOT NULL AND source IN ({placeholders}) "
+            "GROUP BY source, band",
+            sources,
+        ).fetchall()
+        for r in rows:
+            band_low = min(int(r["band"]), 9) * 10
+            cells[(str(r["source"]), f"{band_low}")] = float(r["n"])
+    return sources, bands, cells
+
+
 def _discovery(conn: sqlite3.Connection) -> list[tuple[str, float]]:
     rows = conn.execute(
         "SELECT substr(discovered_at, 1, 10) AS day, COUNT(*) AS n "
@@ -1129,11 +1186,47 @@ def terminal(conn: sqlite3.Connection) -> str:
     )
     body += charts.bar_chart(_funnel(conn), title="Postings reaching each stage")
 
-    body += '<h2 class="rise">Where postings come from</h2>'
-    body += charts.bar_chart(_by_source(conn), title="Jobs by board")
+    body += '<h2 class="rise">Reach</h2>'
+    body += (
+        '<p class="muted">Where postings actually come from, and where they say '
+        "the work is.</p>"
+    )
+    body += '<div class="row2">'
+    body += (
+        '<div class="panel rise">'
+        + charts.bubble_cluster(_by_source(conn), title="Source reach")
+        + "</div>"
+    )
+    body += (
+        '<div class="panel rise">'
+        + charts.ranked_list(_by_location(conn), title="Top locations", unit="")
+        + "</div>"
+    )
+    body += "</div>"
 
-    body += '<h2 class="rise">Discovery</h2>'
-    body += charts.line_chart(_discovery(conn), title="Jobs first seen, by day")
+    body += '<h2 class="rise">Activity</h2>'
+    remote, onsite = _remote_split(conn)
+    src_rows, band_cols, fit_cells = _fit_by_source(conn)
+    body += '<div class="row3">'
+    body += (
+        '<div class="panel rise">'
+        + charts.line_chart(_discovery(conn), title="Jobs first seen, by day")
+        + "</div>"
+    )
+    body += (
+        '<div class="panel rise">'
+        + charts.donut_chart("remote", remote, "onsite", onsite, title="Remote vs onsite")
+        + "</div>"
+    )
+    body += (
+        '<div class="panel rise">'
+        + charts.heatmap_chart(
+            src_rows, band_cols, fit_cells,
+            title="Fit score by source", row_title="Source", col_title="Fit band",
+        )
+        + "</div>"
+    )
+    body += "</div>"
 
     body += '<h2 class="rise">Skills</h2>'
     body += (

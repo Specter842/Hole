@@ -315,14 +315,20 @@ svg.plot .mark { will-change: transform; }
 }
 
 /* -- motion --------------------------------------------------------------- */
-.rise {
+/* `.rise` alone is always fully visible -- it only marks an element as a
+   candidate for the reveal animation. The hidden state lives on `.pending`,
+   which the script adds at runtime right before it starts observing. That
+   ordering matters: content must default to visible and JS may only ever make
+   it *nicer*, never make it appear. Without this split, any page where the
+   inline script does not run -- JavaScript disabled, blocked by an extension,
+   or simply slow to parse -- would leave every `.rise` section permanently
+   blank, which a full-page capture (no real scrolling, so no intersection
+   ever fires) caught directly. */
+.rise.pending {
   opacity: 0; transform: translateY(14px);
   transition: opacity .6s cubic-bezier(.22,.9,.3,1), transform .6s cubic-bezier(.22,.9,.3,1);
 }
-.rise.in { opacity: 1; transform: none; }
-@media (prefers-reduced-motion: reduce) {
-  .rise { opacity: 1; transform: none; transition: none; }
-}
+.rise.pending.in { opacity: 1; transform: none; }
 
 /* A faint grain over the whole page, so large black areas have some tooth
    instead of reading as a dead flat fill. */
@@ -332,6 +338,83 @@ body::after {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 header.bar, main { position: relative; z-index: 2; }
+
+/* -- reach: two-column row, bubble cluster + ranked list ------------------ */
+.row2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 28px; align-items: stretch; }
+@media (max-width: 900px) { .row2 { grid-template-columns: 1fr; } }
+.panel {
+  border: 1px solid var(--line); border-radius: 6px; padding: 26px 28px;
+  background: rgba(255,255,255,.015);
+}
+.panel .chart-title { margin-bottom: 22px; }
+
+.bubbles {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: 14px; min-height: 220px; padding: 10px 0;
+}
+.bubble {
+  width: var(--d); height: var(--d); border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 32% 28%, rgba(65,105,225,.55), rgba(65,105,225,.16) 72%);
+  border: 1px solid rgba(65,105,225,.5);
+  transition: transform .18s ease, border-color .18s ease;
+  cursor: default;
+}
+.bubble:hover { transform: scale(1.05); border-color: rgba(65,105,225,.9); }
+.bubble .bn {
+  font: 700 var(--fs)/1 var(--sans); letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+.bubble .bl {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .1em;
+  color: rgba(255,255,255,.68); margin-top: 4px; text-align: center;
+  max-width: 88%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bubble.rise.pending { opacity: 0; transform: scale(.7); }
+.bubble.rise.pending.in { opacity: 1; transform: scale(1); transition: opacity .55s ease, transform .55s cubic-bezier(.22,.9,.3,1); }
+
+.ranked-list { list-style: none; margin: 0; padding: 0; }
+.ranked-row {
+  display: grid; grid-template-columns: 26px 1fr 96px 60px; align-items: center;
+  gap: 14px; padding: 12px 0; border-top: 1px solid var(--line);
+}
+.ranked-row:first-child { border-top: 0; }
+.rn { font: 11px/1 var(--mono); color: var(--faint); }
+.rl {
+  font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rank-track { height: 4px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
+.rank-fill {
+  display: block; height: 100%; width: 0; background: var(--royal-blue);
+  border-radius: 2px; transition: width .8s cubic-bezier(.22,.9,.3,1);
+}
+.rise.in .rank-fill { width: var(--w); }
+.rv {
+  font: 12px/1 var(--mono); text-align: right; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -- donut ------------------------------------------------------------- */
+.donut-wrap { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+svg.donut { max-width: 220px; }
+.donut-pct {
+  font: 700 30px/1 var(--sans); fill: var(--text); letter-spacing: -.02em;
+}
+.donut-sub {
+  font: 10px/1 var(--sans); fill: var(--faint); text-transform: uppercase; letter-spacing: .12em;
+}
+.donut-legend { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; }
+.donut-legend span {
+  font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 7px;
+}
+.donut-legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.donut-legend b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* -- activity row: three equal cards --------------------------------- */
+.row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; align-items: stretch; }
+.row3 .panel { display: flex; flex-direction: column; }
+@media (max-width: 980px) { .row3 { grid-template-columns: 1fr; } }
 
 /* -- filter row ----------------------------------------------------------- */
 .filter-row {
