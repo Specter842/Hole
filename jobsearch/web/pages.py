@@ -13,6 +13,7 @@ from typing import Any
 
 from .. import answers as answer_bank, db, graph as graph_module, llm, policy
 from ..config import Config
+from . import charts
 from .html import (
     esc,
     field,
@@ -1002,3 +1003,142 @@ def profile_build(conn: sqlite3.Connection, token: str) -> str:
         f'{counts.get("skills", 0)} skills</p>'
     )
     return layout("Your history", body, active="/profile/build")
+
+
+# --------------------------------------------------------------------------- terminal
+
+
+def _fit_histogram(conn: sqlite3.Connection) -> list[tuple[str, float]]:
+    """Scored jobs bucketed by fit, ten points wide."""
+    rows = conn.execute(
+        "SELECT CAST(fit_score / 10 AS INTEGER) AS bucket, COUNT(*) AS n "
+        "FROM jobs WHERE fit_score IS NOT NULL GROUP BY bucket ORDER BY bucket"
+    ).fetchall()
+    counts = {int(r["bucket"]): int(r["n"]) for r in rows}
+    return [(f"{low}", float(counts.get(low // 10, 0))) for low in range(0, 100, 10)]
+
+
+def _by_source(conn: sqlite3.Connection) -> list[tuple[str, float]]:
+    rows = conn.execute(
+        "SELECT source, COUNT(*) AS n FROM jobs GROUP BY source ORDER BY n DESC LIMIT 10"
+    ).fetchall()
+    return [(str(r["source"]), float(r["n"])) for r in rows]
+
+
+def _discovery(conn: sqlite3.Connection) -> list[tuple[str, float]]:
+    rows = conn.execute(
+        "SELECT substr(discovered_at, 1, 10) AS day, COUNT(*) AS n "
+        "FROM jobs WHERE discovered_at IS NOT NULL "
+        "GROUP BY day ORDER BY day DESC LIMIT 30"
+    ).fetchall()
+    return [(str(r["day"])[5:], float(r["n"])) for r in reversed(rows)]
+
+
+def _funnel(conn: sqlite3.Connection) -> list[tuple[str, float]]:
+    """Where postings stop. Each stage counts everything that reached it."""
+    total = conn.execute("SELECT COUNT(*) n FROM jobs").fetchone()["n"]
+    scored = conn.execute(
+        "SELECT COUNT(*) n FROM jobs WHERE fit_score IS NOT NULL"
+    ).fetchone()["n"]
+    drafted = conn.execute("SELECT COUNT(*) n FROM applications").fetchone()["n"]
+    approved = conn.execute(
+        "SELECT COUNT(*) n FROM applications WHERE status IN ('approved','sent')"
+    ).fetchone()["n"]
+    sent = conn.execute(
+        "SELECT COUNT(*) n FROM applications WHERE status = 'sent'"
+    ).fetchone()["n"]
+    return [
+        ("sourced", float(total)),
+        ("scored", float(scored)),
+        ("tailored", float(drafted)),
+        ("approved", float(approved)),
+        ("sent", float(sent)),
+    ]
+
+
+def _top_skills(conn: sqlite3.Connection) -> list[tuple[str, float]]:
+    """Skills with the most evidence behind them.
+
+    `skill_evidence_counts` is keyed by skill id, not name, so this joins back
+    to `skills` -- labelling the bars with row ids reads as nonsense.
+    """
+    rows = conn.execute(
+        "SELECT s.name AS name, COUNT(*) AS n FROM skill_evidence e "
+        "JOIN skills s ON s.id = e.skill_id "
+        "GROUP BY s.id ORDER BY n DESC, s.name LIMIT 8"
+    ).fetchall()
+    return [(str(r["name"]), float(r["n"])) for r in rows]
+
+
+def terminal(conn: sqlite3.Connection) -> str:
+    """The numbers, as pictures.
+
+    Every panel is a single-series magnitude or trend, which is why there is one
+    colour in most of them -- the height already carries the value, and shading
+    it as well would spend the only free channel on information the chart has
+    shown twice.
+    """
+    scored = conn.execute(
+        "SELECT COUNT(*) n, AVG(fit_score) avg, MAX(fit_score) best "
+        "FROM jobs WHERE fit_score IS NOT NULL"
+    ).fetchone()
+    total = conn.execute("SELECT COUNT(*) n FROM jobs").fetchone()["n"]
+    evidenced = len(db.skill_evidence_counts(conn))
+    unevidenced = len(db.unevidenced_skills(conn))
+
+    body = "<h1>Terminal</h1>"
+    body += (
+        '<p class="sub">Every number on this page is counted from the database, '
+        "not estimated.</p>"
+    )
+
+    # The one figure the view leads with.
+    best = scored["best"] if scored and scored["best"] is not None else 0
+    body += (
+        '<div class="hero">'
+        f'<div class="hero-n">{esc(f"{best:.0f}")}</div>'
+        '<div class="hero-k">best fit score on record</div>'
+        "</div>"
+    )
+
+    average = scored["avg"] if scored and scored["avg"] is not None else 0
+    body += '<div class="grid">'
+    body += stat(f"{total:,}", "jobs sourced")
+    body += stat(f"{int(scored['n']):,}" if scored else "0", "scored")
+    body += stat(f"{average:.1f}", "mean fit")
+    body += stat(f"{evidenced}/{evidenced + unevidenced}", "skills evidenced")
+    body += "</div>"
+
+    body += "<h2>Fit score distribution</h2>"
+    body += (
+        '<p class="muted">Where your matches actually cluster. A tall left side '
+        "means the boards are feeding you the wrong roles.</p>"
+    )
+    body += charts.column_chart(_fit_histogram(conn), title="Jobs per 10-point band")
+
+    body += "<h2>Pipeline</h2>"
+    body += (
+        '<p class="muted">Counts at each stage. The gap between two bars is where '
+        "postings are being dropped.</p>"
+    )
+    body += charts.bar_chart(_funnel(conn), title="Postings reaching each stage")
+
+    body += "<h2>Where postings come from</h2>"
+    body += charts.bar_chart(_by_source(conn), title="Jobs by board")
+
+    body += "<h2>Discovery</h2>"
+    body += charts.line_chart(_discovery(conn), title="Jobs first seen, by day")
+
+    body += "<h2>Skills</h2>"
+    body += (
+        '<p class="muted">An unevidenced skill never reaches a resume, so the red '
+        "share is the part of your profile that cannot be used yet.</p>"
+    )
+    body += charts.split_bar(
+        "evidenced", evidenced, "unevidenced", unevidenced,
+        title="Claimable vs unusable",
+    )
+    if _top_skills(conn):
+        body += charts.bar_chart(_top_skills(conn), title="Most-evidenced skills")
+
+    return layout("Terminal", body, active="/terminal")

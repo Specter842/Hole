@@ -87,6 +87,8 @@ class App:
             if len(parts) == 2 and parts[0] == "jobs" and parts[1].isdigit():
                 html = pages.job_detail(conn, int(parts[1]), self._fresh_config(), self.token)
                 return (200, html) if html else _page("No such job", f"Job {parts[1]} is not in the database.", 404)
+            if parts == ["terminal"]:
+                return 200, pages.terminal(conn)
             if parts == ["queue"]:
                 return 200, pages.queue(conn)
             if len(parts) == 2 and parts[0] == "applications" and parts[1].isdigit():

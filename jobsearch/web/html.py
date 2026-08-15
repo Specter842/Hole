@@ -16,6 +16,7 @@ from typing import Any, Iterable, Sequence
 
 NAV = (
     ("/", "Dashboard"),
+    ("/terminal", "Terminal"),
     ("/jobs", "Jobs"),
     ("/queue", "Queue"),
     ("/profile/build", "History"),
@@ -241,6 +242,49 @@ ul.tight li { margin: 0; padding: 15px 0; border-top: 1px solid var(--line); }
 .kv { display: grid; grid-template-columns: var(--gutter) 1fr; gap: 14px 34px; font-size: 15px; }
 .kv dt { font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: var(--faint); padding-top: 3px; }
 .kv dd { margin: 0; }
+
+/* -- charts --------------------------------------------------------------- */
+figure.chart { margin: 0 0 34px; }
+.chart-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .14em; color: var(--faint); margin-bottom: 14px;
+}
+svg.plot { width: 100%; height: auto; display: block; overflow: visible; }
+/* Axis ticks are a column of numbers, so they align on tabular figures.
+   The hero below deliberately does not. */
+svg.plot .tick {
+  font: 10px/1 var(--mono); fill: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+svg.plot .cat { font: 12px/1 var(--sans); fill: var(--muted); }
+svg.plot .val {
+  font: 11px/1 var(--mono); fill: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+svg.plot rect, svg.plot circle { transition: opacity .12s ease; }
+svg.plot:hover rect[fill]:not([fill=transparent]) { opacity: .82; }
+svg.plot rect:hover, svg.plot circle:hover + circle { opacity: 1; }
+
+.chart-table { margin-top: 14px; }
+.chart-table > summary {
+  font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--faint); cursor: pointer; list-style: none;
+}
+.chart-table > summary::-webkit-details-marker { display: none; }
+.chart-table > summary::before { content: "+  "; }
+.chart-table[open] > summary::before { content: "2  "; }
+.chart-table table { margin-top: 12px; max-width: 420px; font-size: 13px; }
+.chart-table td, .chart-table th { padding: 7px 18px 7px 0; }
+.chart-table td:last-child { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* The one number the view leads with. Proportional figures on purpose --
+   tabular would make it look loose at this size. */
+.hero { padding: 10px 0 30px; }
+.hero-n { font-size: clamp(54px, 9vw, 92px); font-weight: 700; letter-spacing: -0.045em; line-height: 1; }
+.hero-k {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .14em;
+  color: var(--faint); margin-top: 12px;
+}
 
 /* -- profile builder ------------------------------------------------------ */
 .ach { display: flex; justify-content: space-between; align-items: flex-start; gap: 22px; }
