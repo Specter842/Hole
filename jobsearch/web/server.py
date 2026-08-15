@@ -18,6 +18,8 @@ Three protections, none of them optional:
 
 from __future__ import annotations
 
+import base64
+import os
 import secrets
 import sqlite3
 import threading
@@ -29,7 +31,7 @@ from typing import Any, Callable
 
 from .. import answers, db, generate, graph as graph_module, pipeline, retrieval, verify
 from ..config import Config
-from . import pages
+from . import assets, pages
 from .html import esc, layout
 
 ALLOWED_HOSTS_SUFFIX = ("localhost", "127.0.0.1", "[::1]")
@@ -51,6 +53,7 @@ class App:
         self.db_path = db_path
         self.config = config
         self.token = token
+        self.password = ""
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------ helpers
@@ -428,7 +431,13 @@ def _handler_class(app: App) -> type[BaseHTTPRequestHandler]:
 
         def _host_ok(self) -> bool:
             host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip().lower()
-            return host in ALLOWED_HOSTS_SUFFIX or host == ""
+            if host in ALLOWED_HOSTS_SUFFIX or host == "":
+                return True
+            # A deployment answers on its own domain, so the rebinding check
+            # cannot be "loopback only" there. It becomes "the host I was told
+            # to expect" instead -- still a fixed allow-list, never a wildcard.
+            expected = os.environ.get("JOBSEARCH_HOST", "").strip().lower()
+            return bool(expected) and host == expected
 
         def _send(self, status: int, body: str) -> None:
             payload = body.encode("utf-8")
@@ -439,9 +448,18 @@ def _handler_class(app: App) -> type[BaseHTTPRequestHandler]:
             # anything from another origin.
             self.send_header("X-Frame-Options", "DENY")
             self.send_header("Referrer-Policy", "no-referrer")
+            # Still `default-src 'none'`. The one script on these pages is
+            # static, so it is allowed by hash rather than by 'unsafe-inline' --
+            # every other inline script stays refused, including anything a job
+            # description manages to smuggle through. `data:` is for the grain
+            # texture, which is an inline SVG.
             self.send_header(
                 "Content-Security-Policy",
-                "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'",
+                "default-src 'none'; "
+                "style-src 'unsafe-inline'; "
+                f"script-src '{assets.SITE_JS_HASH}'; "
+                "img-src 'self' data:; "
+                "form-action 'self'",
             )
             self.end_headers()
             self.wfile.write(payload)
@@ -452,7 +470,43 @@ def _handler_class(app: App) -> type[BaseHTTPRequestHandler]:
             self.send_header("Content-Length", "0")
             self.end_headers()
 
+        def _authorised(self) -> bool:
+            """Basic auth, but only once a password is configured.
+
+            Local use stays frictionless: with no password set this is a no-op,
+            which is safe because the socket is then loopback-only. `serve`
+            refuses a public bind without one, so the two cannot both be off.
+            """
+            expected = getattr(app, "password", "")
+            if not expected:
+                return True
+            header = self.headers.get("Authorization", "")
+            if not header.startswith("Basic "):
+                return False
+            try:
+                raw = base64.b64decode(header[6:]).decode("utf-8", "replace")
+            except Exception:
+                return False
+            _user, _, supplied = raw.partition(":")
+            return secrets.compare_digest(supplied, expected)
+
+        def _ask_for_password(self) -> None:
+            body = layout(
+                "Sign in",
+                "<h1>Sign in</h1><p class='sub'>This dashboard is password "
+                "protected.</p>",
+            ).encode("utf-8")
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="jobsearch"')
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
         def _guard(self) -> bool:
+            if not self._authorised():
+                self._ask_for_password()
+                return False
             if self._host_ok():
                 return True
             self._send(*_page("Blocked", "Unexpected Host header.", 403))
@@ -500,13 +554,24 @@ def serve(
     open_browser: bool = True,
     ready: Callable[[str], None] | None = None,
 ) -> None:
-    """Run until interrupted. Refuses to listen anywhere but loopback."""
-    if host not in ("127.0.0.1", "localhost", "::1"):
+    """Run until interrupted.
+
+    Loopback by default. A public bind is possible -- Render and friends need
+    0.0.0.0 -- but only with a password set, because the alternative is putting
+    someone's address, phone number, employment history, and the ability to send
+    applications on the open internet behind no door at all.
+    """
+    password = os.environ.get("JOBSEARCH_PASSWORD", "")
+    if host not in ("127.0.0.1", "localhost", "::1") and not password:
         raise WebError(
-            f"Refusing to bind {host}. This server exposes your full career history and "
-            "drafts addressed to employers, with no login. It is loopback-only by design."
+            f"Refusing to bind {host} with no password.\n"
+            "This server exposes your full career history and drafts addressed to "
+            "employers, and it can send applications.\n"
+            "Set JOBSEARCH_PASSWORD to a long random string to bind publicly, or "
+            "leave the host as 127.0.0.1."
         )
     app = App(db_path, config or Config.load(), secrets.token_urlsafe(32))
+    app.password = password
     server = ThreadingHTTPServer((host, port), _handler_class(app))
     url = f"http://{host}:{server.server_address[1]}/"
     if ready:

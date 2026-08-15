@@ -165,8 +165,14 @@ def jobs_list(conn: sqlite3.Connection, *, status: str | None = None) -> str:
     )
 
     body = "<h1>Jobs</h1><p class='sub'>Sourced postings, best fit first.</p>"
-    body += f'<div class="actions">{filters}</div><div style="height:12px"></div>'
-    body += table(
+    body += f'<div class="actions">{filters}</div>'
+    body += (
+        '<div class="filter-row">'
+        '<input id="table-filter" type="text" placeholder="Filter by role, company, location...">'
+        f'<span class="count" id="filter-count">{len(rows)} of {len(rows)}</span>'
+        "</div>"
+    )
+    body += '<div data-filterable>' + table(
         ["fit", "role", "company", "location", "status", "source"],
         [
             (
@@ -185,7 +191,7 @@ def jobs_list(conn: sqlite3.Connection, *, status: str | None = None) -> str:
             for job in rows
         ],
         empty="No jobs sourced yet. Run the pipeline, or add sources to config.toml.",
-    )
+    ) + "</div>"
     return layout("Jobs", body, active="/jobs")
 
 
@@ -428,7 +434,7 @@ def profile(conn: sqlite3.Connection) -> str:
                 f'<div class="muted">{esc(node.row.get("description"))}</div></div>'
             )
 
-    body += "<h2>Skills</h2>"
+    body += '<h2 class="rise">Skills</h2>'
     body += table(
         ["skill", "evidence", "category"],
         [
@@ -955,7 +961,7 @@ def profile_build(conn: sqlite3.Connection, token: str) -> str:
     )
 
     # ---------------------------------------------------------------- skills
-    body += "<h2>Skills</h2>"
+    body += '<h2 class="rise">Skills</h2>'
     evidenced = graph.evidenced_skills
     body += (
         f'<p class="muted">{len(evidenced)} with evidence, {len(unevidenced)} without. '
@@ -1109,27 +1115,27 @@ def terminal(conn: sqlite3.Connection) -> str:
     body += stat(f"{evidenced}/{evidenced + unevidenced}", "skills evidenced")
     body += "</div>"
 
-    body += "<h2>Fit score distribution</h2>"
+    body += '<h2 class="rise">Fit score distribution</h2>'
     body += (
         '<p class="muted">Where your matches actually cluster. A tall left side '
         "means the boards are feeding you the wrong roles.</p>"
     )
     body += charts.column_chart(_fit_histogram(conn), title="Jobs per 10-point band")
 
-    body += "<h2>Pipeline</h2>"
+    body += '<h2 class="rise">Pipeline</h2>'
     body += (
         '<p class="muted">Counts at each stage. The gap between two bars is where '
         "postings are being dropped.</p>"
     )
     body += charts.bar_chart(_funnel(conn), title="Postings reaching each stage")
 
-    body += "<h2>Where postings come from</h2>"
+    body += '<h2 class="rise">Where postings come from</h2>'
     body += charts.bar_chart(_by_source(conn), title="Jobs by board")
 
-    body += "<h2>Discovery</h2>"
+    body += '<h2 class="rise">Discovery</h2>'
     body += charts.line_chart(_discovery(conn), title="Jobs first seen, by day")
 
-    body += "<h2>Skills</h2>"
+    body += '<h2 class="rise">Skills</h2>'
     body += (
         '<p class="muted">An unevidenced skill never reaches a resume, so the red '
         "share is the part of your profile that cannot be used yet.</p>"

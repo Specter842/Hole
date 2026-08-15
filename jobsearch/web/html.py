@@ -14,6 +14,8 @@ from __future__ import annotations
 import html
 from typing import Any, Iterable, Sequence
 
+from .assets import SITE_JS
+
 NAV = (
     ("/", "Dashboard"),
     ("/terminal", "Terminal"),
@@ -26,7 +28,7 @@ NAV = (
     ("/runs", "Runs"),
 )
 
-STYLESHEET = """
+STYLESHEET = r"""
 /* Editorial dark: a near-black canvas, oversized tight display type, and small
    uppercase tracked labels sitting in a left gutter beside their content.
    Structure is carried by hairline rules and whitespace rather than by boxes,
@@ -244,46 +246,102 @@ ul.tight li { margin: 0; padding: 15px 0; border-top: 1px solid var(--line); }
 .kv dd { margin: 0; }
 
 /* -- charts --------------------------------------------------------------- */
-figure.chart { margin: 0 0 34px; }
+figure.chart { margin: 0 0 46px; }
 .chart-title {
   font-size: 11px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: .14em; color: var(--faint); margin-bottom: 14px;
+  letter-spacing: .14em; color: var(--faint); margin-bottom: 18px;
 }
+.chart-host { min-height: 60px; }
+/* Until the engine runs, the table is the chart. Once it has drawn, the table
+   folds away into its disclosure rather than disappearing. */
+.chart-host.ready > .chart-table { margin-top: 18px; }
 svg.plot { width: 100%; height: auto; display: block; overflow: visible; }
-/* Axis ticks are a column of numbers, so they align on tabular figures.
-   The hero below deliberately does not. */
 svg.plot .tick {
   font: 10px/1 var(--mono); fill: var(--faint);
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums; letter-spacing: .06em;
 }
-svg.plot .cat { font: 12px/1 var(--sans); fill: var(--muted); }
+svg.plot .cat { font: 13px/1 var(--sans); fill: var(--muted); }
 svg.plot .val {
-  font: 11px/1 var(--mono); fill: var(--text);
+  font: 12px/1 var(--mono); fill: var(--text);
   font-variant-numeric: tabular-nums;
 }
-svg.plot rect, svg.plot circle { transition: opacity .12s ease; }
-svg.plot:hover rect[fill]:not([fill=transparent]) { opacity: .82; }
-svg.plot rect:hover, svg.plot circle:hover + circle { opacity: 1; }
+svg.plot .hit { cursor: crosshair; }
+svg.plot .mark { will-change: transform; }
 
-.chart-table { margin-top: 14px; }
+.tip {
+  position: fixed; z-index: 60; pointer-events: none;
+  background: rgba(10,10,10,.96); border: 1px solid var(--line-strong);
+  border-radius: 4px; padding: 9px 12px; min-width: 96px;
+  opacity: 0; transform: translateY(3px);
+  transition: opacity .12s ease, transform .12s ease;
+  backdrop-filter: blur(8px);
+}
+.tip.on { opacity: 1; transform: translateY(0); }
+.tip b {
+  display: block; font: 600 17px/1.1 var(--sans); letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+.tip span {
+  display: block; margin-top: 5px; font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--faint);
+}
+
+.chart-table { margin-top: 16px; }
 .chart-table > summary {
   font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
   color: var(--faint); cursor: pointer; list-style: none;
 }
+.chart-table > summary:hover { color: var(--royal-blue); }
 .chart-table > summary::-webkit-details-marker { display: none; }
 .chart-table > summary::before { content: "+  "; }
-.chart-table[open] > summary::before { content: "2  "; }
-.chart-table table { margin-top: 12px; max-width: 420px; font-size: 13px; }
-.chart-table td, .chart-table th { padding: 7px 18px 7px 0; }
+.chart-table[open] > summary::before { content: "\2212  "; }
+.chart-table table { margin-top: 14px; max-width: 440px; font-size: 13px; }
+.chart-table td, .chart-table th { padding: 8px 20px 8px 0; }
 .chart-table td:last-child { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-/* The one number the view leads with. Proportional figures on purpose --
+/* The one number a view leads with. Proportional figures on purpose --
    tabular would make it look loose at this size. */
-.hero { padding: 10px 0 30px; }
-.hero-n { font-size: clamp(54px, 9vw, 92px); font-weight: 700; letter-spacing: -0.045em; line-height: 1; }
+.hero { padding: 12px 0 40px; }
+.hero-n {
+  font-size: clamp(64px, 11vw, 132px); font-weight: 700;
+  letter-spacing: -.05em; line-height: .92;
+  background: linear-gradient(170deg, #fff 30%, rgba(255,255,255,.62));
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
 .hero-k {
-  font-size: 11px; text-transform: uppercase; letter-spacing: .14em;
-  color: var(--faint); margin-top: 12px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .16em;
+  color: var(--faint); margin-top: 16px;
+}
+
+/* -- motion --------------------------------------------------------------- */
+.rise {
+  opacity: 0; transform: translateY(14px);
+  transition: opacity .6s cubic-bezier(.22,.9,.3,1), transform .6s cubic-bezier(.22,.9,.3,1);
+}
+.rise.in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .rise { opacity: 1; transform: none; transition: none; }
+}
+
+/* A faint grain over the whole page, so large black areas have some tooth
+   instead of reading as a dead flat fill. */
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  opacity: .04;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+header.bar, main { position: relative; z-index: 2; }
+
+/* -- filter row ----------------------------------------------------------- */
+.filter-row {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin: 0 0 26px;
+}
+.filter-row input { max-width: 340px; padding: 12px 15px; font-size: 14px; }
+.filter-row .count {
+  font: 11px/1 var(--mono); color: var(--faint);
+  letter-spacing: .1em; text-transform: uppercase;
 }
 
 /* -- profile builder ------------------------------------------------------ */
@@ -343,12 +401,35 @@ def layout(title: str, body: str, *, active: str = "") -> str:
         f"<title>{esc(title)} - jobsearch</title>"
         f"<style>{STYLESHEET}</style></head><body>"
         f'<header class="bar"><span class="brand">jobsearch</span><nav>{links}</nav></header>'
-        f"<main>{body}</main></body></html>"
+        f"<main>{body}</main>"
+        f"<script>{SITE_JS}</script></body></html>"
+    )
+
+
+def _countable(number: Any) -> str:
+    """Mark a figure for the count-up animation when it is really a number.
+
+    Values like "10/20" are left alone -- animating them would need parsing that
+    could only get it wrong, and a wrong number here is worse than a static one.
+    """
+    text = str(number)
+    plain = text.replace(",", "").replace("%", "")
+    try:
+        float(plain)
+    except ValueError:
+        return f"<div class='n'>{esc(text)}</div>"
+    suffix = "%" if text.endswith("%") else ""
+    return (
+        f"<div class='n' data-count='{esc(plain.rstrip('%'))}' "
+        f"data-suffix='{esc(suffix)}'>{esc(text)}</div>"
     )
 
 
 def stat(number: Any, label: str) -> str:
-    return f'<div class="card stat"><div class="n">{esc(number)}</div><div class="k">{esc(label)}</div></div>'
+    return (
+        f'<div class="card stat">{_countable(number)}'
+        f'<div class="k">{esc(label)}</div></div>'
+    )
 
 
 def pill(text: str, tone: str = "") -> str:

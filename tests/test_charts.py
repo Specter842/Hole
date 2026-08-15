@@ -1,12 +1,19 @@
-"""Tests for the SVG charts.
+"""Tests for the charts.
 
-Mostly about the properties that make a chart honest rather than pretty: marks
-sized to spec, values never reachable only by hovering, and text from the job
-boards escaped like everywhere else.
+The drawing moved to the browser, so what is testable here is the contract
+between the two halves: the payload the server hands over, the table that stays
+behind when JavaScript does not run, and the escaping -- category labels arrive
+from job boards and land inside an HTML attribute.
+
+The mark specs are asserted against the engine source. That is a weaker check
+than measuring a rendered bar, and it is deliberate: the real geometry check is
+opening the page and looking at it, which is how the last two chart bugs were
+found. These catch a spec being edited away by accident.
 """
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import tempfile
@@ -18,7 +25,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from jobsearch import db  # noqa: E402
 from jobsearch.config import Config  # noqa: E402
 from jobsearch.web import charts  # noqa: E402
+from jobsearch.web.assets import SITE_JS, SITE_JS_HASH  # noqa: E402
 from jobsearch.web.server import App  # noqa: E402
+
+
+def payload(html: str) -> dict:
+    """Pull the chart payload back out of the data attribute."""
+    match = re.search(r'data-chart="([^"]+)"', html)
+    assert match, "no chart payload in output"
+    raw = (
+        match.group(1)
+        .replace("&quot;", '"')
+        .replace("&#x27;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+    )
+    return json.loads(raw)
 
 
 class FormattingTests(unittest.TestCase):
@@ -35,78 +58,59 @@ class FormattingTests(unittest.TestCase):
         self.assertEqual(charts._nice_max(0), 1)
 
 
-class MarkSpecTests(unittest.TestCase):
-    """The viewBox is in pixels, so the specs have to hold in viewBox units."""
+class PayloadTests(unittest.TestCase):
+    def test_each_form_declares_its_kind(self) -> None:
+        cases = {
+            charts.column_chart([("0", 5)]): "columns",
+            charts.bar_chart([("a", 1)]): "bars",
+            charts.line_chart([("01", 1), ("02", 2)]): "line",
+            charts.split_bar("evidenced", 3, "unevidenced", 1): "split",
+        }
+        for html, kind in cases.items():
+            with self.subTest(kind=kind):
+                self.assertEqual(payload(html)["kind"], kind)
 
-    def test_columns_never_exceed_the_bar_cap(self) -> None:
-        svg = charts.column_chart([("0", 5), ("10", 9)])
-        widths = [float(w) for w in re.findall(r'<rect [^>]*width="([\d.]+)"', svg)]
-        self.assertTrue(widths)
-        self.assertLessEqual(max(widths), charts.BAR_MAX)
+    def test_rows_survive_as_label_value_pairs(self) -> None:
+        data = payload(charts.bar_chart([("greenhouse", 1146), ("remotive", 18)]))
+        self.assertEqual(data["rows"], [["greenhouse", 1146.0], ["remotive", 18.0]])
 
-    def test_bars_are_thin(self) -> None:
-        svg = charts.bar_chart([("greenhouse", 1146), ("remotive", 18)])
-        heights = [float(h) for h in re.findall(r'<rect [^>]*height="([\d.]+)"', svg)]
-        self.assertTrue(heights)
-        self.assertLessEqual(max(heights), charts.BAR_MAX)
-
-    def test_the_line_is_two_pixels_and_round(self) -> None:
-        svg = charts.line_chart([("01", 3), ("02", 9), ("03", 5)])
-        self.assertIn('stroke-width="2"', svg)
-        self.assertIn('stroke-linecap="round"', svg)
-
-    def test_the_area_wash_is_not_a_saturated_block(self) -> None:
-        svg = charts.line_chart([("01", 3), ("02", 9)])
-        self.assertIn('fill-opacity="0.1"', svg)
-
-    def test_the_end_marker_carries_a_surface_ring(self) -> None:
-        svg = charts.line_chart([("01", 3), ("02", 9)])
-        self.assertIn(f'stroke="{charts.SURFACE}" stroke-width="2"', svg)
-
-    def test_gridlines_are_solid_hairlines(self) -> None:
-        svg = charts.column_chart([("0", 5)])
-        self.assertIn('stroke-width="1"', svg)
-        self.assertNotIn("stroke-dasharray", svg)
+    def test_the_title_travels_with_the_data(self) -> None:
+        data = payload(charts.bar_chart([("a", 1)], title="Jobs by board"))
+        self.assertEqual(data["title"], "Jobs by board")
 
 
-class AccessibilityTests(unittest.TestCase):
-    def test_every_chart_ships_a_table_twin(self) -> None:
-        for svg in (
+class FallbackTests(unittest.TestCase):
+    """With no JavaScript the table is the chart, so it must always be there."""
+
+    def test_every_form_ships_a_table(self) -> None:
+        for html in (
             charts.column_chart([("0", 5)]),
             charts.bar_chart([("a", 1)]),
             charts.line_chart([("01", 1), ("02", 2)]),
             charts.split_bar("evidenced", 10, "unevidenced", 10),
         ):
-            with self.subTest(chart=svg[:40]):
-                self.assertIn("chart-table", svg)
-                self.assertIn("<table>", svg)
+            with self.subTest(chart=html[:40]):
+                self.assertIn("chart-table", html)
+                self.assertIn("<table>", html)
 
-    def test_two_series_get_a_legend(self) -> None:
-        svg = charts.split_bar("evidenced", 10, "unevidenced", 4)
-        self.assertIn("evidenced", svg)
-        self.assertIn("unevidenced", svg)
-
-    def test_charts_are_labelled_for_screen_readers(self) -> None:
-        svg = charts.bar_chart([("a", 1)], title="Jobs by board")
-        self.assertIn('role="img"', svg)
-        self.assertIn('aria-label="Jobs by board"', svg)
-
-    def test_marks_carry_hover_titles(self) -> None:
-        svg = charts.bar_chart([("greenhouse", 1146)])
-        self.assertIn("<title>greenhouse: 1,146</title>", svg)
+    def test_the_table_carries_the_real_values(self) -> None:
+        html = charts.bar_chart([("greenhouse", 1146)])
+        self.assertIn("greenhouse", html)
+        self.assertIn("1,146", html)
 
 
 class EscapingTests(unittest.TestCase):
-    """Category names reach this from job boards, so they are untrusted."""
+    """Labels come from job boards and land inside an HTML attribute."""
 
-    def test_a_category_name_cannot_inject_markup(self) -> None:
-        svg = charts.bar_chart([("<script>alert(1)</script>", 3)])
-        self.assertNotIn("<script>", svg)
-        self.assertIn("&lt;script&gt;", svg)
+    def test_a_category_name_cannot_break_out_of_the_attribute(self) -> None:
+        html = charts.bar_chart([('" onmouseover="alert(1)', 3)])
+        self.assertNotIn('onmouseover="alert(1)"', html)
 
-    def test_a_bin_label_cannot_inject_markup(self) -> None:
-        svg = charts.column_chart([("<img src=x onerror=1>", 3)])
-        self.assertNotIn("<img", svg)
+    def test_a_script_tag_is_escaped_in_both_halves(self) -> None:
+        html = charts.column_chart([("<script>alert(1)</script>", 3)])
+        self.assertNotIn("<script>alert(1)</script>", html)
+        # And it survives the round trip intact as text, not as markup.
+        self.assertEqual(payload(html)["rows"][0][0], "<script>alert(1)</script>")
 
 
 class EmptyStateTests(unittest.TestCase):
@@ -114,13 +118,52 @@ class EmptyStateTests(unittest.TestCase):
         self.assertIn("Nothing to plot", charts.column_chart([]))
         self.assertIn("Nothing to plot", charts.bar_chart([]))
         self.assertIn("Not enough history", charts.line_chart([("01", 1)]))
-
-    def test_all_zero_values_do_not_divide_by_zero(self) -> None:
-        svg = charts.bar_chart([("a", 0), ("b", 0)])
-        self.assertIn("<svg", svg)
-
-    def test_split_bar_with_nothing_in_it(self) -> None:
         self.assertIn("Nothing to plot", charts.split_bar("a", 0, "b", 0))
+
+    def test_all_zero_values_still_produce_a_payload(self) -> None:
+        data = payload(charts.bar_chart([("a", 0), ("b", 0)]))
+        self.assertEqual(data["rows"], [["a", 0.0], ["b", 0.0]])
+
+
+class EngineTests(unittest.TestCase):
+    """Properties of the client-side engine that must not be edited away."""
+
+    def test_it_honours_reduced_motion(self) -> None:
+        self.assertIn("prefers-reduced-motion", SITE_JS)
+
+    def test_marks_stay_thin(self) -> None:
+        # Columns cap at 26, bars draw at 16. Both are under the 24-32 band that
+        # starts reading as slabs.
+        self.assertIn("Math.min(26, slot - 8)", SITE_JS)
+        self.assertIn("bh = 16", SITE_JS)
+
+    def test_the_line_is_two_pixels_with_round_joins(self) -> None:
+        self.assertIn("'stroke-width': 2", SITE_JS)
+        self.assertIn("'stroke-linecap': 'round'", SITE_JS)
+
+    def test_the_area_is_a_wash_not_a_block(self) -> None:
+        self.assertIn("'fill-opacity': '.10'", SITE_JS)
+
+    def test_hit_targets_are_larger_than_the_marks(self) -> None:
+        # Whole-slot and whole-row hit rectangles, so a 2px bar is still hoverable.
+        self.assertIn("'class': 'hit'", SITE_JS)
+
+    def test_only_the_two_validated_hues_appear(self) -> None:
+        hexes = set(re.findall(r"#[0-9a-fA-F]{6}", SITE_JS))
+        self.assertEqual(hexes, {"#4169e1", "#c8102e"})
+
+
+class CspTests(unittest.TestCase):
+    def test_the_hash_matches_the_script_actually_served(self) -> None:
+        import base64
+        import hashlib
+
+        from jobsearch.web.html import layout
+
+        digest = hashlib.sha256(SITE_JS.encode("utf-8")).digest()
+        self.assertEqual(SITE_JS_HASH, "sha256-" + base64.b64encode(digest).decode())
+        # And the page really does embed exactly that string.
+        self.assertIn(SITE_JS, layout("t", "<p>x</p>"))
 
 
 class TerminalPageTests(unittest.TestCase):
@@ -151,7 +194,7 @@ class TerminalPageTests(unittest.TestCase):
         status, body = self.app.get("/terminal", {})
         self.assertEqual(status, 200)
         self.assertIn("greenhouse", body)
-        self.assertIn("<svg", body)
+        self.assertIn("data-chart=", body)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ model output is not trusted either, so both reach these pages as hostile text.
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
@@ -141,8 +142,11 @@ class EscapingTests(WebTestCase):
 
     def test_job_description_is_escaped_on_the_detail_page(self) -> None:
         _status, body = self.app.get(f"/jobs/{self.job_id}", {})
-        self.assertNotIn("<script>", body)
+        # The page carries one script of its own -- the chart engine -- so this
+        # asks the sharper question: does the board's payload survive as markup?
+        self.assertNotIn(XSS, body)
         self.assertIn("&lt;script&gt;", body)
+        self.assertEqual(body.count("<script>"), 1)
 
     def test_company_name_is_escaped_in_listings(self) -> None:
         conn = db.connect(self.db_path)
@@ -162,7 +166,9 @@ class EscapingTests(WebTestCase):
         conn.commit()
         conn.close()
         _status, body = self.app.get("/jobs", {})
-        self.assertNotIn("<script>", body)
+        # One legitimate script -- the chart engine. Assert the payload, not the tag.
+        self.assertNotIn(XSS, body)
+        self.assertEqual(body.count("<script>"), 1)
         self.assertIn("&lt;script&gt;", body)
 
     def test_generated_documents_are_escaped(self) -> None:
@@ -170,7 +176,9 @@ class EscapingTests(WebTestCase):
         bundle.mkdir(exist_ok=True)
         (bundle / "resume.md").write_text(f"# Resume\n{XSS}", encoding="utf-8")
         _status, body = self.app.get(f"/applications/{self.app_id}", {})
-        self.assertNotIn("<script>", body)
+        # One legitimate script -- the chart engine. Assert the payload, not the tag.
+        self.assertNotIn(XSS, body)
+        self.assertEqual(body.count("<script>"), 1)
         self.assertIn("&lt;script&gt;", body)
 
 
@@ -303,3 +311,29 @@ class BindingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PublicBindTests(unittest.TestCase):
+    """A public bind is possible for Render, but never silently unprotected."""
+
+    def setUp(self) -> None:
+        self._saved = os.environ.pop("JOBSEARCH_PASSWORD", None)
+        self.addCleanup(self._restore)
+
+    def _restore(self) -> None:
+        if self._saved is None:
+            os.environ.pop("JOBSEARCH_PASSWORD", None)
+        else:
+            os.environ["JOBSEARCH_PASSWORD"] = self._saved
+
+    def test_binding_publicly_without_a_password_is_refused(self) -> None:
+        from jobsearch.web.server import WebError, serve
+
+        with self.assertRaises(WebError) as caught:
+            serve(host="0.0.0.0", port=0, open_browser=False)
+        self.assertIn("password", str(caught.exception).lower())
+
+    def test_loopback_still_needs_no_password(self) -> None:
+        # Local use must stay frictionless; the socket is the protection there.
+        app = App(None, Config(), "tok")
+        self.assertEqual(app.password, "")

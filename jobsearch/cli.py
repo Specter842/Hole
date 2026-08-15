@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import textwrap
 from datetime import date
@@ -1095,6 +1096,7 @@ def cmd_answers(args: argparse.Namespace) -> int:
 
 def cmd_web(args: argparse.Namespace) -> int:
     from .web import serve
+    from .web.server import WebError
 
     config = _load_config(args)
     if config is None:
@@ -1104,19 +1106,29 @@ def cmd_web(args: argparse.Namespace) -> int:
         _err(f"No database at {db_path}. Run `python -m jobsearch init` first.")
         return 1
 
+    public = args.host not in ("127.0.0.1", "localhost", "::1")
+
     def announce(url: str) -> None:
         _out(f"Review UI: {url}")
-        _out("Loopback only -- nothing outside this machine can reach it.")
+        if public:
+            _out("Listening publicly, password required. Anyone with the password can")
+            _out("read your history and approve applications.")
+        else:
+            _out("Loopback only -- nothing outside this machine can reach it.")
         _out("Ctrl-C to stop.")
 
     try:
         serve(
             db_path=db_path,
             config=config,
+            host=args.host,
             port=args.port,
-            open_browser=not args.no_browser,
+            open_browser=not args.no_browser and not public,
             ready=announce,
         )
+    except WebError as exc:
+        _err(str(exc))
+        return 1
     except OSError as exc:
         _err(f"Could not start the server on port {args.port}: {exc}")
         return 1
@@ -1706,7 +1718,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("web", parents=[common, config_opt],
                        help="local browser UI for reviewing jobs, drafts, and the profile")
-    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--port", type=int, default=int(os.environ.get("PORT") or 8765),
+                   help="defaults to $PORT, which is what a host like Render sets")
+    p.add_argument("--host", default="127.0.0.1",
+                   help="0.0.0.0 to accept outside connections. Needs JOBSEARCH_PASSWORD set.")
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
     p.set_defaults(func=cmd_web)
 
