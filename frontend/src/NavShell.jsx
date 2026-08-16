@@ -43,7 +43,7 @@ export default function NavShell({ route, title, subtitle, nav = {}, children })
                 <path d="M4 20L14 4L20 14L10 20" stroke="#0A0A0B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            <span className="font-bold text-sm tracking-tight">jobsearch</span>
+            <span className="font-bold text-sm tracking-tight">Hole</span>
           </div>
 
           <div className="font-semibold tracking-wide mb-2 px-2 mt-1" style={{ color: C.textMute, fontSize: '11px' }}>

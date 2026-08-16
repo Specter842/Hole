@@ -72,7 +72,7 @@ def _react_page(title: str, route: str, data: dict[str, Any]) -> str:
         "<!doctype html>\n"
         '<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{esc(title)} - jobsearch</title>"
+        f"<title>{esc(title)} - Hole</title>"
         f"<style>{assets.REACT_BUNDLE_CSS}</style></head><body>"
         f'<div id="jobsearch-react-root" data-route="{esc(route)}" data-payload="{payload}"></div>'
         f"<script>{assets.REACT_BUNDLE_JS}</script></body></html>"

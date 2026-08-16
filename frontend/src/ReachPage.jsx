@@ -17,8 +17,8 @@ export function WorldMap({ pins }) {
   return (
     <>
       <svg viewBox="0 0 1000 500" preserveAspectRatio="none" className="absolute inset-0 w-full h-full block">
-        <path d={WORLD_LAND_PATH} fill="#3A3A3A" stroke="none" />
-        <path d={WORLD_BORDERS_PATH} fill="none" stroke="#565656" strokeWidth="0.6" />
+        <path d={WORLD_LAND_PATH} fill={C.mapLand} stroke="none" />
+        <path d={WORLD_BORDERS_PATH} fill="none" stroke={C.mapBorder} strokeWidth="0.6" />
       </svg>
       {pins && pins.map((p, i) => (
         <div
@@ -273,7 +273,7 @@ export default function ReachPage({ data }) {
           </button>
         </div>
         <div className="flex gap-5 px-5 pb-5">
-          <div className="flex-1 relative rounded-lg overflow-hidden" style={{ aspectRatio: '2 / 1', maxHeight: 340, background: C.panelAlt }}>
+          <div className="flex-1 relative rounded-lg overflow-hidden" style={{ aspectRatio: '2 / 1', maxHeight: 340, background: C.panel }}>
             <WorldMap pins={country_pins} />
           </div>
           <div className="w-72 flex-shrink-0 rounded-lg p-4" style={{ background: C.panelAlt }}>

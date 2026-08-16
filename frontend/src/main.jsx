@@ -72,7 +72,7 @@ const PAGE_COMPONENTS = {
 }
 
 function App() {
-  const meta = { ...(PAGE_META[route] || { title: 'jobsearch', subtitle: '' }) }
+  const meta = { ...(PAGE_META[route] || { title: 'Hole', subtitle: '' }) }
   if (data.page && PAGE_OVERRIDE[data.page]) {
     Object.assign(meta, PAGE_OVERRIDE[data.page](data))
   }

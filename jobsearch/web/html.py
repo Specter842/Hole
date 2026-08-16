@@ -483,9 +483,9 @@ def layout(title: str, body: str, *, active: str = "") -> str:
         "<!doctype html>\n"
         '<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{esc(title)} - jobsearch</title>"
+        f"<title>{esc(title)} - Hole</title>"
         f"<style>{STYLESHEET}</style></head><body>"
-        f'<header class="bar"><span class="brand">jobsearch</span><nav>{links}</nav></header>'
+        f'<header class="bar"><span class="brand">Hole</span><nav>{links}</nav></header>'
         f"<main>{body}</main>"
         f"<script>{SITE_JS}</script></body></html>"
     )
