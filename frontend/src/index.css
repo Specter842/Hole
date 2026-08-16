@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* These two pages (Reach, Funnel) are served as standalone documents -- React
+   owns the whole page, including its own left-nav shell, the way the
+   reference estics-reach-dashboard.jsx does. Every other page in the app
+   keeps the original server-rendered header.bar chrome untouched. */
+html, body {
+  margin: 0;
+  background: #0A0A0B;
+  color: #FFFFFF;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+#jobsearch-react-root {
+  --panel: #131316;
+  --panel-alt: #1C1E21;
+  --border: rgba(255,255,255,0.08);
+}
+
+#jobsearch-react-root .focus-ring:focus-visible {
+  outline: 2px solid #8AD3D8;
+  outline-offset: 2px;
+}
+
+#jobsearch-react-root .icon-btn:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+#jobsearch-react-root .dropdown-item:hover {
+  background: rgba(255,255,255,0.06);
+}

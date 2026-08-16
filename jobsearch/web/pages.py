@@ -13,20 +13,8 @@ from typing import Any
 
 from .. import answers as answer_bank, db, graph as graph_module, llm, policy
 from ..config import Config
-from . import charts
-from .html import (
-    esc,
-    field,
-    form,
-    form_button,
-    kv,
-    layout,
-    notice,
-    pill,
-    score_bar,
-    stat,
-    table,
-)
+from . import assets, charts, geo
+from .html import esc, layout, notice, stat
 
 STATUS_TONE = {
     "sent": "good",
@@ -52,10 +40,102 @@ def _job_title(job: dict[str, Any]) -> str:
     return f"{job.get('title') or 'Untitled'} @ {job.get('company') or 'Unknown'}"
 
 
+# --------------------------------------------------------------------------- react pages
+#
+# Reach and Funnel are rendered by frontend/ (React, port of
+# estics-reach-dashboard.jsx) instead of the server-side html.py/charts.py
+# combination every other page uses. This function builds that page as a
+# standalone document -- it does not call `layout()`, because these two pages
+# own their own chrome (a left-nav sidebar), the way the reference does.
+#
+# Every figure passed in `data` is either a query already run for `/terminal`
+# or a small variant of one (see the `_by_source`/`_funnel`/etc. helpers
+# below) -- nothing here is invented or hardcoded.
+
+
+def _react_page(title: str, route: str, data: dict[str, Any]) -> str:
+    if not assets.REACT_BUNDLE_AVAILABLE:
+        body = (
+            f"<h1>{esc(title)}</h1>"
+            + notice(
+                "The React bundle has not been built.",
+                [
+                    "Run `npm install && npm run build` in frontend/, then reload this page.",
+                ],
+                tone="warn",
+            )
+        )
+        return layout(title, body, active=f"/{route}")
+
+    payload = esc(json.dumps(data, separators=(",", ":")))
+    return (
+        "<!doctype html>\n"
+        '<html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"<title>{esc(title)} - jobsearch</title>"
+        f"<style>{assets.REACT_BUNDLE_CSS}</style></head><body>"
+        f'<div id="jobsearch-react-root" data-route="{esc(route)}" data-payload="{payload}"></div>'
+        f"<script>{assets.REACT_BUNDLE_JS}</script></body></html>"
+    )
+
+
 # --------------------------------------------------------------------------- dashboard
 
 
+def _config_notices(config: Config) -> list[dict[str, Any]]:
+    """The config-problem / autonomous-mode warnings, as structured data.
+
+    Honesty first: say plainly what is not wired up, because the most
+    expensive failure here is believing the pipeline will send when it
+    cannot. This is the same logic the old server-rendered dashboard led
+    with -- kept intact and just reshaped for the React page to render.
+    """
+    notices: list[dict[str, Any]] = []
+    problems = config.problems()
+    if problems:
+        notices.append({"tone": "bad", "text": "Not ready to run:", "items": list(problems)})
+
+    if config.exists() and not config.autonomous:
+        notices.append({
+            "tone": "warn",
+            "text": "Review-only mode. The pipeline will source, score, tailor, and "
+            "verify, then stop. Nothing is sent.",
+            "items": [],
+        })
+    elif config.autonomous:
+        channels = [
+            name
+            for name, on in (
+                ("email", config.dispatch.email.enabled),
+                ("ats_form", config.dispatch.ats.enabled),
+            )
+            if on
+        ]
+        if channels:
+            notices.append({
+                "tone": "bad",
+                "text": f"Autonomous mode is ON. Applications that pass every check are "
+                f"sent via {', '.join(channels)} without asking.",
+                "items": [],
+            })
+        else:
+            notices.append({
+                "tone": "warn",
+                "text": "autonomous = true but no dispatch channel is enabled, so nothing "
+                "can actually be sent. Everything will queue for review.",
+                "items": [],
+            })
+    return notices
+
+
 def dashboard(conn: sqlite3.Connection, config: Config) -> str:
+    """The home page: the same reach/activity treatment `/reach` renders,
+    populated with this app's actual dashboard-relevant data -- profile
+    counts, job/application status, pipeline health -- rather than reach's
+    figures. The config-problem and autonomous-mode notices the old
+    server-rendered version led with are carried over unchanged (see
+    `_config_notices`); dropping them silently would be a regression.
+    """
     counts = db.profile_counts(conn)
     evidenced = len(db.skill_evidence_counts(conn))
     unevidenced = len(db.unevidenced_skills(conn))
@@ -69,82 +149,47 @@ def dashboard(conn: sqlite3.Connection, config: Config) -> str:
     ).fetchall()
     apps_by_status = {r["status"]: r["n"] for r in app_rows}
 
-    body = "<h1>Dashboard</h1>"
-
-    # Honesty first: say plainly what is not wired up, because the most
-    # expensive failure here is believing the pipeline will send when it cannot.
-    problems = config.problems()
-    if problems:
-        body += notice("Not ready to run:", problems, tone="bad")
-
-    if config.exists() and not config.autonomous:
-        body += notice(
-            "Review-only mode. The pipeline will source, score, tailor, and verify, "
-            "then stop. Nothing is sent.",
-            tone="warn",
-        )
-    elif config.autonomous:
-        channels = [
-            name
-            for name, on in (
-                ("email", config.dispatch.email.enabled),
-                ("ats_form", config.dispatch.ats.enabled),
-            )
-            if on
-        ]
-        if channels:
-            body += notice(
-                f"Autonomous mode is ON. Applications that pass every check are sent "
-                f"via {', '.join(channels)} without asking.",
-                tone="bad",
-            )
-        else:
-            body += notice(
-                "autonomous = true but no dispatch channel is enabled, so nothing can "
-                "actually be sent. Everything will queue for review.",
-                tone="warn",
-            )
-
-    body += '<div class="grid">'
-    body += stat(counts.get("experiences", 0), "positions")
-    body += stat(counts.get("achievements", 0), "accomplishments")
-    body += stat(f"{evidenced}/{evidenced + unevidenced}", "skills with evidence")
-    body += stat(sum(jobs_by_status.values()), "jobs sourced")
-    body += stat(apps_by_status.get("drafted", 0), "awaiting review")
-    body += stat(apps_by_status.get("sent", 0), "sent")
-    body += "</div>"
-
-    body += "<h2>Model</h2><div class='card'>"
-    body += f"<span class='mono'>{esc(llm.describe())}</span></div>"
-
-    if jobs_by_status:
-        body += "<h2>Jobs by status</h2><div class='card'>"
-        body += " ".join(
-            pill(f"{status}: {n}", _tone(status)) for status, n in sorted(jobs_by_status.items())
-        )
-        body += "</div>"
-
-    if apps_by_status:
-        body += "<h2>Applications by status</h2><div class='card'>"
-        body += " ".join(
-            pill(f"{status}: {n}", _tone(status)) for status, n in sorted(apps_by_status.items())
-        )
-        body += "</div>"
-
     last = conn.execute(
         "SELECT * FROM pipeline_runs ORDER BY id DESC LIMIT 1"
     ).fetchone()
-    if last:
-        row = db.row_to_dict(last) or {}
-        body += "<h2>Last run</h2><div class='card'>" + kv(
-            [
-                ("Started", esc(row.get("started_at"))),
-                ("Mode", esc(row.get("mode"))),
-                ("Finished", esc(row.get("finished_at")) or "<span class='muted'>did not finish</span>"),
-            ]
-        ) + "</div>"
+    last_run = db.row_to_dict(last) if last else None
 
-    return layout("Dashboard", body, active="/")
+    postings_by_country = _postings_by_country(conn)
+    country_pins = _country_pins(postings_by_country)
+
+    data = {
+        "nav": _nav_counts(conn),
+        "notices": _config_notices(config),
+        "stats": [
+            {"label": "positions", "value": counts.get("experiences", 0)},
+            {"label": "accomplishments", "value": counts.get("achievements", 0)},
+            {"label": "skills with evidence", "value": f"{evidenced}/{evidenced + unevidenced}"},
+            {"label": "jobs sourced", "value": sum(jobs_by_status.values())},
+            {"label": "awaiting review", "value": apps_by_status.get("drafted", 0)},
+            {"label": "sent", "value": apps_by_status.get("sent", 0)},
+        ],
+        "jobs_by_status": [
+            [status, n, _tone(status)] for status, n in sorted(jobs_by_status.items())
+        ],
+        "apps_by_status": [
+            [status, n, _tone(status)] for status, n in sorted(apps_by_status.items())
+        ],
+        "model": llm.describe(),
+        "last_run": (
+            {
+                "started_at": last_run.get("started_at"),
+                "mode": last_run.get("mode"),
+                "finished_at": last_run.get("finished_at"),
+            }
+            if last_run
+            else None
+        ),
+        "postings_by_country": postings_by_country,
+        "country_pins": country_pins,
+        "by_source": _by_source(conn),
+        "by_location": _by_location(conn),
+    }
+    return _react_page("Dashboard", "", data)
 
 
 # --------------------------------------------------------------------------- jobs
@@ -159,40 +204,28 @@ def jobs_list(conn: sqlite3.Connection, *, status: str | None = None) -> str:
     sql += " ORDER BY (fit_score IS NULL), fit_score DESC, id DESC LIMIT 400"
     rows = db.rows_to_dicts(conn.execute(sql, params).fetchall())
 
-    filters = " ".join(
-        f'<a class="btn" href="/jobs{"" if s is None else "?status=" + s}">{esc(s or "all")}</a>'
-        for s in (None, "new", "scored", "tailored", "applied", "skipped", "failed")
-    )
-
-    body = "<h1>Jobs</h1><p class='sub'>Sourced postings, best fit first.</p>"
-    body += f'<div class="actions">{filters}</div>'
-    body += (
-        '<div class="filter-row">'
-        '<input id="table-filter" type="text" placeholder="Filter by role, company, location...">'
-        f'<span class="count" id="filter-count">{len(rows)} of {len(rows)}</span>'
-        "</div>"
-    )
-    body += '<div data-filterable>' + table(
-        ["fit", "role", "company", "location", "status", "source"],
-        [
-            (
-                score_bar(job.get("fit_score")),
-                f'<a href="/jobs/{job["id"]}">{esc(job.get("title") or "Untitled")}</a>'
-                + (
-                    f'<div class="muted" style="font-size:12px">{esc(job.get("skip_reason"))}</div>'
-                    if job.get("skip_reason")
-                    else ""
-                ),
-                esc(job.get("company")),
-                esc(job.get("location")) + (" " + pill("remote") if job.get("remote") else ""),
-                pill(job.get("status") or "new", _tone(job.get("status"))),
-                esc(job.get("source")),
-            )
+    data = {
+        "nav": _nav_counts(conn),
+        "page": "jobs_list",
+        "status": status,
+        "statuses": ["new", "scored", "tailored", "applied", "skipped", "failed"],
+        "jobs": [
+            {
+                "id": job["id"],
+                "title": job.get("title") or "Untitled",
+                "company": job.get("company"),
+                "location": job.get("location"),
+                "remote": bool(job.get("remote")),
+                "status": job.get("status") or "new",
+                "tone": _tone(job.get("status")),
+                "source": job.get("source"),
+                "fit_score": job.get("fit_score"),
+                "skip_reason": job.get("skip_reason"),
+            }
             for job in rows
         ],
-        empty="No jobs sourced yet. Run the pipeline, or add sources to config.toml.",
-    ) + "</div>"
-    return layout("Jobs", body, active="/jobs")
+    }
+    return _react_page("Jobs", "jobs", data)
 
 
 def job_detail(conn: sqlite3.Connection, job_id: int, config: Config, token: str) -> str | None:
@@ -200,60 +233,44 @@ def job_detail(conn: sqlite3.Connection, job_id: int, config: Config, token: str
     if not job:
         return None
 
-    body = f"<h1>{esc(_job_title(job))}</h1>"
-    links = ""
-    if job.get("url"):
-        links += f'<a href="{esc(job["url"])}" target="_blank" rel="noreferrer noopener">posting</a> '
-    if job.get("apply_url"):
-        links += f'<a href="{esc(job["apply_url"])}" target="_blank" rel="noreferrer noopener">apply form</a>'
-    body += f"<p class='sub'>{links}</p>"
-
-    body += "<div class='card'>" + kv(
-        [
-            ("Fit score", score_bar(job.get("fit_score"))),
-            ("Status", pill(job.get("status") or "new", _tone(job.get("status")))),
-            ("Source", esc(job.get("source"))),
-            ("Location", esc(job.get("location"))),
-            ("Compensation", esc(job.get("compensation"))),
-            ("Posted", esc(job.get("posted_at"))),
-            ("Discovered", esc(job.get("discovered_at"))),
-            ("Skipped because", esc(job.get("skip_reason"))),
-        ]
-    ) + "</div>"
-
     existing = db.rows_to_dicts(
         conn.execute("SELECT * FROM applications WHERE job_id = ? ORDER BY id DESC", (job_id,)).fetchall()
     )
-    if existing:
-        body += "<h2>Applications</h2>"
-        body += table(
-            ["id", "status", "grounding", "created"],
-            [
-                (
-                    f'<a href="/applications/{a["id"]}">#{a["id"]}</a>',
-                    pill(a.get("status") or "", _tone(a.get("status"))),
-                    pill(a.get("grounding_status") or "?", "good" if a.get("grounding_status") == "clean" else "warn"),
-                    esc(a.get("approved_at") or a.get("sent_date") or ""),
-                )
-                for a in existing
-            ],
-        )
-    else:
-        body += (
-            '<div class="actions">'
-            + form_button(
-                f"/jobs/{job_id}/tailor",
-                "Tailor for this posting",
-                token,
-                style="primary",
-                confirm="Tailoring makes one model API call. Continue?",
-            )
-            + "</div>"
-        )
 
-    body += "<h2>Posting</h2>"
-    body += f'<div class="doc">{esc(job.get("description") or "")}</div>'
-    return layout(_job_title(job), body, active="/jobs")
+    data = {
+        "nav": _nav_counts(conn),
+        "page": "job_detail",
+        "token": token,
+        "job": {
+            "id": job_id,
+            "title": job.get("title") or "Untitled",
+            "company": job.get("company") or "Unknown",
+            "url": job.get("url"),
+            "apply_url": job.get("apply_url"),
+            "fit_score": job.get("fit_score"),
+            "status": job.get("status") or "new",
+            "tone": _tone(job.get("status")),
+            "source": job.get("source"),
+            "location": job.get("location"),
+            "compensation": job.get("compensation"),
+            "posted_at": job.get("posted_at"),
+            "discovered_at": job.get("discovered_at"),
+            "skip_reason": job.get("skip_reason"),
+            "description": job.get("description") or "",
+        },
+        "applications": [
+            {
+                "id": a["id"],
+                "status": a.get("status") or "",
+                "tone": _tone(a.get("status")),
+                "grounding_status": a.get("grounding_status") or "?",
+                "grounding_clean": a.get("grounding_status") == "clean",
+                "date": a.get("approved_at") or a.get("sent_date") or "",
+            }
+            for a in existing
+        ],
+    }
+    return _react_page(_job_title(job), "jobs", data)
 
 
 # --------------------------------------------------------------------------- queue
@@ -261,27 +278,25 @@ def job_detail(conn: sqlite3.Connection, job_id: int, config: Config, token: str
 
 def queue(conn: sqlite3.Connection) -> str:
     rows = db.list_applications(conn)
-    body = "<h1>Queue</h1><p class='sub'>Everything drafted, approved, or sent.</p>"
-    body += table(
-        ["id", "role", "company", "fit", "grounding", "status", "channel"],
-        [
-            (
-                f'<a href="/applications/{a["id"]}">#{a["id"]}</a>',
-                esc(a.get("role")),
-                esc(a.get("company")),
-                score_bar(a.get("fit_score")),
-                pill(
-                    a.get("grounding_status") or "?",
-                    "good" if a.get("grounding_status") == "clean" else "warn",
-                ),
-                pill(a.get("status") or "", _tone(a.get("status"))),
-                esc(a.get("channel")),
-            )
+    data = {
+        "nav": _nav_counts(conn),
+        "page": "queue",
+        "applications": [
+            {
+                "id": a["id"],
+                "role": a.get("role"),
+                "company": a.get("company"),
+                "fit_score": a.get("fit_score"),
+                "grounding_status": a.get("grounding_status") or "?",
+                "grounding_clean": a.get("grounding_status") == "clean",
+                "status": a.get("status") or "",
+                "tone": _tone(a.get("status")),
+                "channel": a.get("channel"),
+            }
             for a in rows
         ],
-        empty="Nothing drafted yet.",
-    )
-    return layout("Queue", body, active="/queue")
+    }
+    return _react_page("Queue", "queue", data)
 
 
 def _read_bundle(resume_version: str | None) -> dict[str, str]:
@@ -311,7 +326,6 @@ def application_detail(conn: sqlite3.Connection, app_id: int, token: str) -> str
         return None
 
     title = f"{app.get('role') or 'Application'} @ {app.get('company') or ''}".strip()
-    body = f"<h1>{esc(title)}</h1>"
 
     reasons: list[str] = []
     raw_reasons = app.get("decision_reasons")
@@ -322,61 +336,34 @@ def application_detail(conn: sqlite3.Connection, app_id: int, token: str) -> str
         except (ValueError, TypeError):
             reasons = [str(raw_reasons)]
 
-    body += "<div class='card'>" + kv(
-        [
-            ("Status", pill(app.get("status") or "", _tone(app.get("status")))),
-            ("Fit score", score_bar(app.get("fit_score"))),
-            (
-                "Grounding",
-                pill(
-                    app.get("grounding_status") or "unknown",
-                    "good" if app.get("grounding_status") == "clean" else "warn",
-                ),
-            ),
-            ("Channel", esc(app.get("channel"))),
-            ("Source", esc(app.get("source"))),
-            (
-                "Posting",
-                f'<a href="{esc(app["job_url"])}" target="_blank" rel="noreferrer noopener">link</a>'
-                if app.get("job_url")
-                else "",
-            ),
-            ("Bundle", f'<span class="mono">{esc(app.get("resume_version"))}</span>'),
-            ("Approved", esc(app.get("approved_at"))),
-            ("Sent", esc(app.get("sent_date"))),
-            ("Dispatch error", f'<span style="color:var(--bad)">{esc(app.get("dispatch_error"))}</span>'
-             if app.get("dispatch_error") else ""),
-        ]
-    ) + "</div>"
-
-    if reasons:
-        body += notice("Why the policy engine decided this:", reasons)
-
-    status = (app.get("status") or "").lower()
-    if status == "drafted":
-        body += (
-            '<div class="actions">'
-            + form_button(f"/applications/{app_id}/approve", "Approve", token, style="primary")
-            + form_button(f"/applications/{app_id}/reject", "Reject", token, style="danger")
-            + "</div>"
-        )
-    elif status == "approved":
-        body += notice(
-            "Approved. This tool does not send from the browser -- run the pipeline, "
-            "or send it yourself from the bundle folder.",
-            tone="warn",
-        )
-
     documents = _read_bundle(app.get("resume_version"))
-    if not documents:
-        body += notice(
-            "The generated documents are not on disk at the recorded path.",
-            tone="warn",
-        )
-    for name, content in documents.items():
-        body += f"<h2>{esc(name)}</h2><div class='doc'>{esc(content)}</div>"
 
-    return layout(title or "Application", body, active="/queue")
+    data = {
+        "nav": _nav_counts(conn),
+        "page": "application_detail",
+        "token": token,
+        "application": {
+            "id": app_id,
+            "role": app.get("role"),
+            "company": app.get("company"),
+            "status": app.get("status") or "",
+            "tone": _tone(app.get("status")),
+            "fit_score": app.get("fit_score"),
+            "grounding_status": app.get("grounding_status") or "unknown",
+            "grounding_clean": app.get("grounding_status") == "clean",
+            "channel": app.get("channel"),
+            "source": app.get("source"),
+            "job_url": app.get("job_url"),
+            "resume_version": app.get("resume_version"),
+            "approved_at": app.get("approved_at"),
+            "sent_date": app.get("sent_date"),
+            "dispatch_error": app.get("dispatch_error"),
+        },
+        "reasons": reasons,
+        "documents": documents,
+        "documents_missing": not documents,
+    }
+    return _react_page(title or "Application", "queue", data)
 
 
 # --------------------------------------------------------------------------- profile
@@ -388,78 +375,48 @@ def profile(conn: sqlite3.Connection) -> str:
     evidence = db.skill_evidence_counts(conn)
     unevidenced = db.unevidenced_skills(conn)
 
-    body = "<h1>Profile</h1><p class='sub'>The graph every resume is drawn from.</p>"
-
-    if not g.experiences and not g.projects:
-        body += notice(
-            "The graph is empty. Import a LinkedIn export or a resume first.",
-            tone="warn",
-        )
-
-    body += '<div class="grid">'
-    for key in ("experiences", "achievements", "projects", "education", "skills"):
-        body += stat(counts.get(key, 0), key)
-    body += "</div>"
-
-    if g.experiences:
-        body += "<h2>Positions</h2>"
-        for node in g.experiences:
-            bullets = "".join(
-                f"<li>{esc(a.row.get('description') or a.title)}"
-                + (
-                    f' <span class="muted">({esc(a.row.get("quantified_impact"))})</span>'
-                    if a.row.get("quantified_impact")
-                    else ""
-                )
-                + ("" if a.verified else " " + pill("unconfirmed", "warn"))
-                + "</li>"
+    positions = [
+        {
+            "label": node.label,
+            "dates": node.dates,
+            "achievements": [
+                {
+                    "text": a.row.get("description") or a.title,
+                    "impact": a.row.get("quantified_impact"),
+                    "verified": bool(a.verified),
+                }
                 for a in node.achievements
-            )
-            body += (
-                f'<div class="card"><h3>{esc(node.label)}</h3>'
-                f'<div class="muted mono" style="font-size:12px">{esc(node.dates)}</div>'
-                + (
-                    f'<ul class="tight">{bullets}</ul>'
-                    if bullets
-                    else '<div class="muted" style="margin-top:6px">No accomplishments recorded.</div>'
-                )
-                + "</div>"
-            )
+            ],
+        }
+        for node in g.experiences
+    ]
+    projects = [
+        {"name": node.row.get("name"), "description": node.row.get("description")}
+        for node in g.projects
+    ]
+    skills = [
+        {
+            "name": skill.get("name"),
+            "category": skill.get("category"),
+            "evidence_count": evidence.get(skill["id"], 0),
+        }
+        for skill in db.list_skills(conn)
+    ]
 
-    if g.projects:
-        body += "<h2>Projects</h2>"
-        for node in g.projects:
-            body += (
-                f'<div class="card"><h3>{esc(node.row.get("name"))}</h3>'
-                f'<div class="muted">{esc(node.row.get("description"))}</div></div>'
-            )
-
-    body += '<h2 class="rise">Skills</h2>'
-    body += table(
-        ["skill", "evidence", "category"],
-        [
-            (
-                esc(skill.get("name")),
-                (
-                    pill(f"{evidence.get(skill['id'], 0)} record(s)", "good")
-                    if evidence.get(skill["id"])
-                    else pill("none -- will never appear on a resume", "bad")
-                ),
-                esc(skill.get("category")),
-            )
-            for skill in db.list_skills(conn)
-        ],
-        empty="No skills recorded.",
-    )
-
-    if unevidenced:
-        body += notice(
-            f"{len(unevidenced)} skill(s) have no supporting record, so they are locked "
-            "out of every resume:",
-            [s["name"] for s in unevidenced],
-            tone="warn",
-        )
-    return layout("Profile", body, active="/profile")
+    data = {
+        "nav": _nav_counts(conn),
+        "page": "profile",
+        "empty": not g.experiences and not g.projects,
+        "counts": {
+            key: counts.get(key, 0)
+            for key in ("experiences", "achievements", "projects", "education", "skills")
+        },
+        "positions": positions,
+        "projects": projects,
+        "skills": skills,
+        "unevidenced": [s["name"] for s in unevidenced],
+    }
+    return _react_page("Profile", "profile", data)
 
 
 # --------------------------------------------------------------------------- review
@@ -478,12 +435,7 @@ REVIEWABLE = (
 
 
 def review(conn: sqlite3.Connection, token: str) -> str:
-    body = (
-        "<h1>Review</h1>"
-        "<p class='sub'>Rows a model extracted from your documents. Confirm them and "
-        "<code>tailor --verified-only</code> will use them.</p>"
-    )
-    found = False
+    sections: list[dict[str, Any]] = []
     for name in REVIEWABLE:
         try:
             rows = db.rows_to_dicts(
@@ -495,28 +447,29 @@ def review(conn: sqlite3.Connection, token: str) -> str:
             continue
         if not rows:
             continue
-        found = True
-        body += f"<h2>{esc(name)} ({len(rows)})</h2>"
-        body += table(
-            ["id", "what", ""],
-            [
-                (
-                    f'<span class="mono">{row["id"]}</span>',
-                    esc(
+        sections.append({
+            "name": name,
+            "rows": [
+                {
+                    "id": row["id"],
+                    "label": (
                         row.get("title")
                         or row.get("name")
                         or row.get("description")
                         or row.get("degree")
                         or "(no label)"
                     ),
-                    form_button(f"/review/{name}/{row['id']}/verify", "Confirm", token),
-                )
+                }
                 for row in rows
             ],
-        )
-    if not found:
-        body += notice("Nothing awaiting review. Every row is confirmed.", tone="")
-    return layout("Review", body, active="/review")
+        })
+    data = {
+        "nav": _nav_counts(conn),
+        "page": "review",
+        "token": token,
+        "sections": sections,
+    }
+    return _react_page("Review", "", data)
 
 
 # --------------------------------------------------------------------------- runs
@@ -526,22 +479,21 @@ def runs(conn: sqlite3.Connection) -> str:
     rows = db.rows_to_dicts(
         conn.execute("SELECT * FROM pipeline_runs ORDER BY id DESC LIMIT 100").fetchall()
     )
-    body = "<h1>Runs</h1><p class='sub'>One row per pipeline run, for auditing an unattended night.</p>"
-    body += table(
-        ["id", "mode", "started", "finished", "notes"],
-        [
-            (
-                f'<span class="mono">{r["id"]}</span>',
-                pill(r.get("mode") or ""),
-                esc(r.get("started_at")),
-                esc(r.get("finished_at")) or '<span class="muted">did not finish</span>',
-                esc(r.get("summary") or r.get("notes") or ""),
-            )
+    data = {
+        "nav": _nav_counts(conn),
+        "page": "runs",
+        "runs": [
+            {
+                "id": r["id"],
+                "mode": r.get("mode") or "",
+                "started_at": r.get("started_at"),
+                "finished_at": r.get("finished_at"),
+                "summary": r.get("summary") or r.get("notes") or "",
+            }
             for r in rows
         ],
-        empty="No runs recorded yet.",
-    )
-    return layout("Runs", body, active="/runs")
+    }
+    return _react_page("Runs", "runs", data)
 
 
 # --------------------------------------------------------------------------- answers
@@ -571,98 +523,31 @@ def answers_page(conn: sqlite3.Connection, token: str) -> str:
     """
     stored = answer_bank.list_all(conn)
     gaps = answer_bank.gaps(conn)
-
-    body = "<h1>Answers</h1>"
-    body += (
-        '<p class="muted">Forms ask things a resume does not cover. Write each answer '
-        "once here and applications fill from it. Nothing on this page is ever "
-        "generated -- what you type is exactly what gets submitted.</p>"
-    )
-
-    if gaps:
-        rows = ""
-        for gap in gaps:
-            question = str(gap.get("question") or "")
-            scope = f" &middot; {esc(gap['company'])}" if gap.get("company") else ""
-            rows += (
-                '<div class="answer-row"><div style="flex:1">'
-                f'<div><span class="count">{int(gap.get("seen_count") or 1)}&times;</span> '
-                f"{esc(question)}{scope}</div>"
-                + form(
-                    "/answers/add",
-                    token,
-                    field("pattern", "", question[:60], placeholder="question to match")
-                    + field("answer", "", "", placeholder="your answer"),
-                    "Answer it",
-                )
-                + "</div></div>"
-            )
-        body += (
-            '<div class="card">'
-            "<h2>Blocking your applications</h2>"
-            '<p class="muted">These stopped a real application. Answer one and it is '
-            "covered on every future posting that asks it.</p>" + rows + "</div>"
-        )
-
-    if stored:
-        rows = ""
-        for item in stored:
-            scope = f' <span class="muted">&middot; {esc(item.company)}</span>' if item.company else ""
-            rows += (
-                '<div class="answer-row"><div>'
-                f'<div class="pattern">{esc(item.pattern)}{scope}</div>'
-                f'<div class="value">{esc(item.answer)}</div></div>'
-                + form_button(f"/answers/{item.id}/delete", "Delete", token, style="danger")
-                + "</div>"
-            )
-        body += f'<div class="card"><h2>Stored ({len(stored)})</h2>{rows}</div>'
-
     known = {a.pattern for a in stored}
     suggestions = [q for q in COMMON_QUESTIONS if q[0] not in known]
-    if suggestions:
-        rows = ""
-        for pattern, label, hint in suggestions:
-            rows += (
-                '<div class="answer-row"><div style="flex:1">'
-                + form(
-                    "/answers/add",
-                    token,
-                    f'<input type="hidden" name="pattern" value="{esc(pattern)}">'
-                    + field("answer", label, "", hint=hint, placeholder=hint),
-                    "Save",
-                )
-                + "</div></div>"
-            )
-        body += (
-            '<div class="card"><h2>Common questions</h2>'
-            '<p class="muted">Filling these in covers most application forms. '
-            "Skip any that do not apply to you.</p>" + rows + "</div>"
-        )
 
-    body += (
-        '<div class="card"><h2>Add your own</h2>'
-        + form(
-            "/answers/add",
-            token,
-            '<div class="grid2">'
-            + field(
-                "pattern", "Question contains", "", placeholder="visa sponsorship",
-                hint="Matched against the form's question, case-insensitive.",
-            )
-            + field(
-                "company", "Only for company (optional)", "", placeholder="Anthropic",
-                hint="Leave blank to use for every employer.",
-            )
-            + "</div>"
-            + field(
-                "answer", "Answer", "", kind="textarea",
-                placeholder="Exactly what should be entered",
-            ),
-            "Add answer",
-        )
-        + "</div>"
-    )
-    return layout("Answers", body, active="/answers")
+    data = {
+        "nav": _nav_counts(conn),
+        "page": "answers",
+        "token": token,
+        "gaps": [
+            {
+                "question": str(gap.get("question") or ""),
+                "company": gap.get("company"),
+                "seen_count": int(gap.get("seen_count") or 1),
+            }
+            for gap in gaps
+        ],
+        "stored": [
+            {"id": item.id, "pattern": item.pattern, "answer": item.answer, "company": item.company}
+            for item in stored
+        ],
+        "suggestions": [
+            {"pattern": pattern, "label": label, "hint": hint}
+            for pattern, label, hint in suggestions
+        ],
+    }
+    return _react_page("Answers", "answers", data)
 
 
 # --------------------------------------------------------------------------- profile editor
@@ -696,79 +581,36 @@ def profile_edit(conn: sqlite3.Connection, token: str) -> str:
         for key, value in current.items()
         if key not in known and key not in ("updated_at", "summary")
     }
-
-    core = "".join(
-        field(name, label, current.get(name, ""), kind=kind, hint=hint)
-        for name, label, kind, hint in PROFILE_FIELDS
-    )
-    body = "<h1>Your details</h1>"
-    body += (
-        '<p class="muted">What gets typed into application forms. Anything blank here '
-        "is a field an application can stop on.</p>"
-    )
     missing = [label for name, label, _k, _h in PROFILE_FIELDS if not current.get(name)]
-    if missing:
-        body += notice("Not filled in yet", missing, tone="warn")
 
-    body += (
-        '<div class="card">'
-        + form(
-            "/profile/save",
-            token,
-            f'<div class="grid2">{core}</div>'
-            + field(
-                "summary", "Summary", current.get("summary", ""), kind="textarea", rows=4,
-                hint="A few lines about you. Used for tone, never copied verbatim.",
-            ),
-            "Save details",
-        )
-        + "</div>"
-    )
-
-    if extra:
-        rows = "".join(
-            '<div class="answer-row"><div>'
-            f'<div class="pattern">{esc(key)}</div>'
-            f'<div class="value">{esc(value)}</div></div>'
-            + form_button(f"/profile/attr/{key}/delete", "Delete", token, style="danger")
-            + "</div>"
-            for key, value in sorted(extra.items())
-        )
-        body += f'<div class="card"><h2>Other details</h2>{rows}</div>'
-
-    body += (
-        '<div class="card"><h2>Add anything else</h2>'
-        '<p class="muted">Pronouns, clearance level, salary floor, visa status -- '
-        "anything a form might ask that has no box above.</p>"
-        + form(
-            "/profile/save",
-            token,
-            '<div class="grid2">'
-            + field("key", "Name", "", placeholder="security_clearance")
-            + field("value", "Value", "", placeholder="Secret, active")
-            + "</div>",
-            "Add detail",
-        )
-        + "</div>"
-    )
-    return layout("Your details", body, active="/profile/edit")
+    data = {
+        "nav": _nav_counts(conn),
+        "page": "profile_edit",
+        "token": token,
+        "fields": [
+            {"name": name, "label": label, "kind": kind, "hint": hint, "value": current.get(name, "")}
+            for name, label, kind, hint in PROFILE_FIELDS
+        ],
+        "summary": current.get("summary", ""),
+        "missing": missing,
+        "extra": [{"key": key, "value": value} for key, value in sorted(extra.items())],
+    }
+    return _react_page("Your details", "profile", data)
 
 
 # --------------------------------------------------------------------------- profile builder
 
 
 def _dates(start: Any, end: Any, current: Any = 0) -> str:
-    start = esc(start) or "?"
+    """A plain-text date range -- no HTML entities. This value travels inside
+    the JSON payload React parses and renders directly (React escapes on its
+    own), not into a hand-built HTML string, so pre-escaping it here would
+    show up as literal "&ndash;" text instead of an en dash.
+    """
+    start = str(start) if start else "?"
     if current and not end:
-        return f"{start} &ndash; present"
-    return f"{start} &ndash; {esc(end) or 'present'}"
-
-
-def _delete(entity: str, row_id: Any, token: str, what: str) -> str:
-    return form_button(
-        f"/profile/{entity}/{row_id}/delete", "Delete", token,
-        style="danger", confirm=f"Delete {what}? This cannot be undone.",
-    )
+        return f"{start} – present"
+    return f"{start} – {str(end) if end else 'present'}"
 
 
 def profile_build(conn: sqlite3.Connection, token: str) -> str:
@@ -780,37 +622,13 @@ def profile_build(conn: sqlite3.Connection, token: str) -> str:
     right employer without the model guessing.
     """
     graph = graph_module.ProfileGraph.load(conn)
-    body = "<h1>Your history</h1>"
-    body += (
-        '<p class="muted">Everything a resume is built from. Nothing here is generated -- '
-        "tailoring selects from these rows and writes prose for them, it never adds a fact "
-        "that is not on this page.</p>"
-    )
-
     counts = graph.counts()
     unevidenced = db.unevidenced_skills(conn)
-    if not graph.experiences:
-        body += notice(
-            "No positions yet. Add one below, then add the things you did there -- "
-            "an accomplishment has to belong to a position, project, or degree.",
-            tone="warn",
-        )
 
-    # ---------------------------------------------------------------- positions
-    body += "<h2>Positions</h2>"
+    positions = []
     for node in graph.experiences:
         record = node.row
-        exp_id = record.get("id")
-        header = (
-            f'<div class="row-head"><div>'
-            f'<strong>{esc(record.get("title"))}</strong>'
-            f'{" &middot; " + esc(record.get("organization")) if record.get("organization") else ""}'
-            f'<div class="muted" style="font-size:13px">'
-            f'{_dates(record.get("start_date"), record.get("end_date"), record.get("is_current"))}'
-            f'{" &middot; " + esc(record.get("location")) if record.get("location") else ""}</div>'
-            f"</div>{_delete('experience', exp_id, token, 'this position and everything under it')}</div>"
-        )
-        bullets = ""
+        achievements = []
         for achievement in node.achievements:
             impact = achievement.row.get("quantified_impact")
             title = str(achievement.row.get("title") or "")
@@ -822,193 +640,68 @@ def profile_build(conn: sqlite3.Connection, token: str) -> str:
                 title, detail = detail, ""
             elif detail == title:
                 detail = ""
-            bullets += (
-                '<li><div class="ach">'
-                f"<div><strong>{esc(title)}</strong>"
-                + (f'<div class="muted">{esc(detail)}</div>' if detail else "")
-                + (f'<div class="impact">{esc(impact)}</div>' if impact else "")
-                + "</div>"
-                + _delete("achievement", achievement.row.get("id"), token, "this accomplishment")
-                + "</div></li>"
-            )
-        bullets = f'<ul class="tight">{bullets}</ul>' if bullets else (
-            '<p class="muted" style="font-size:13px">No accomplishments yet. '
-            "These are what a resume is actually made of.</p>"
-        )
-        add = form(
-            "/profile/achievement/add",
-            token,
-            f'<input type="hidden" name="experience_id" value="{esc(exp_id)}">'
-            + '<div class="grid2">'
-            + field("title", "What you did", "", placeholder="Rebuilt the checkout API")
-            + field("impact", "Measurable result (optional)", "",
-                    placeholder="cut p95 latency 40%",
-                    hint="Only a number you can point at. Invented metrics are what grounding catches.")
-            + "</div>"
-            + field("description", "Detail", "", kind="textarea", rows=2,
-                    placeholder="What the work was, in a sentence or two.")
-            + field("skills", "Skills used (comma separated)", "",
-                    placeholder="Python, PostgreSQL",
-                    hint="Each becomes evidence that you have used that skill."),
-            "Add accomplishment",
-        )
-        body += f'<div class="card">{header}{bullets}<details><summary>Add accomplishment</summary>{add}</details></div>'
+            achievements.append({
+                "id": achievement.row.get("id"),
+                "title": title,
+                "detail": detail,
+                "impact": impact,
+            })
+        positions.append({
+            "id": record.get("id"),
+            "title": record.get("title"),
+            "organization": record.get("organization"),
+            "dates": _dates(record.get("start_date"), record.get("end_date"), record.get("is_current")),
+            "location": record.get("location"),
+            "achievements": achievements,
+        })
 
-    body += (
-        '<div class="card"><h3>Add a position</h3>'
-        + form(
-            "/profile/experience/add",
-            token,
-            '<div class="grid2">'
-            + field("title", "Title", "", placeholder="Senior Software Engineer")
-            + field("org", "Company", "", placeholder="Acme Corp")
-            + field("start", "Started", "", placeholder="2021-03")
-            + field("end", "Ended", "", placeholder="leave blank if current")
-            + field("location", "Location", "", placeholder="Austin, TX")
-            + field("type", "Employment type", "full-time",
-                    kind="select",
-                    options=["full-time", "part-time", "contract", "internship", "freelance"])
-            + "</div>"
-            + field("skills", "Skills (comma separated)", "", placeholder="Python, AWS"),
-            "Add position",
-        )
-        + "</div>"
-    )
+    education = [
+        {
+            "id": record.get("id"),
+            "degree": record.get("degree"),
+            "organization": record.get("organization"),
+            "field_of_study": record.get("field_of_study"),
+            "dates": _dates(record.get("start_date"), record.get("end_date")),
+        }
+        for record in db.list_education(conn)
+    ]
 
-    # ---------------------------------------------------------------- education
-    body += "<h2>Education</h2>"
-    for record in db.list_education(conn):
-        body += (
-            '<div class="card"><div class="row-head"><div>'
-            f'<strong>{esc(record.get("degree"))}</strong>'
-            f'{" &middot; " + esc(record.get("organization")) if record.get("organization") else ""}'
-            f'<div class="muted" style="font-size:13px">'
-            f'{esc(record.get("field_of_study"))} {_dates(record.get("start_date"), record.get("end_date"))}</div>'
-            "</div>"
-            + _delete("education", record.get("id"), token, "this degree")
-            + "</div></div>"
-        )
-    body += (
-        '<div class="card"><h3>Add education</h3>'
-        + form(
-            "/profile/education/add",
-            token,
-            '<div class="grid2">'
-            + field("title", "Degree", "", placeholder="BS Computer Science")
-            + field("org", "School", "", placeholder="University of Texas")
-            + field("field", "Field of study", "", placeholder="Computer Science")
-            + field("start", "Started", "", placeholder="2015")
-            + field("end", "Finished", "", placeholder="2019")
-            + "</div>",
-            "Add education",
-        )
-        + "</div>"
-    )
+    projects = [
+        {"id": node.row.get("id"), "name": node.row.get("name"), "description": node.row.get("description")}
+        for node in graph.projects
+    ]
 
-    # ---------------------------------------------------------------- projects
-    body += "<h2>Projects</h2>"
-    for node in graph.projects:
-        record = node.row
-        body += (
-            '<div class="card"><div class="row-head"><div>'
-            f'<strong>{esc(record.get("name"))}</strong>'
-            f'<div class="muted" style="font-size:13px">{esc(record.get("description"))}</div></div>'
-            + _delete("project", record.get("id"), token, "this project")
-            + "</div></div>"
+    certifications = [
+        {
+            "id": record.get("id"),
+            "name": record.get("name"),
+            "issuer": record.get("issuer"),
+            "issue_date": record.get("issue_date"),
+        }
+        for record in db.rows_to_dicts(
+            conn.execute("SELECT * FROM certifications ORDER BY IFNULL(issue_date, '') DESC")
         )
-    body += (
-        '<div class="card"><h3>Add a project</h3>'
-        + form(
-            "/profile/project/add",
-            token,
-            '<div class="grid2">'
-            + field("title", "Name", "", placeholder="Open-source scheduler")
-            + field("role", "Your role", "", placeholder="Creator")
-            + field("url", "Link", "", placeholder="https://github.com/...")
-            + field("skills", "Skills (comma separated)", "", placeholder="Go, Kubernetes")
-            + "</div>"
-            + field("description", "What it is", "", kind="textarea", rows=2),
-            "Add project",
-        )
-        + "</div>"
-    )
+    ]
 
-    # ---------------------------------------------------------------- certifications
-    body += "<h2>Certifications</h2>"
-    for record in db.rows_to_dicts(conn.execute("SELECT * FROM certifications ORDER BY IFNULL(issue_date, '') DESC")):
-        body += (
-            '<div class="card"><div class="row-head"><div>'
-            f'<strong>{esc(record.get("name"))}</strong>'
-            f'{" &middot; " + esc(record.get("issuer")) if record.get("issuer") else ""}'
-            f'<div class="muted" style="font-size:13px">{esc(record.get("issue_date"))}</div></div>'
-            + _delete("certification", record.get("id"), token, "this certification")
-            + "</div></div>"
-        )
-    body += (
-        '<div class="card"><h3>Add a certification</h3>'
-        + form(
-            "/profile/certification/add",
-            token,
-            '<div class="grid2">'
-            + field("title", "Name", "", placeholder="AWS Solutions Architect")
-            + field("org", "Issuer", "", placeholder="Amazon Web Services")
-            + field("start", "Issued", "", placeholder="2024-06")
-            + field("url", "Credential link", "", placeholder="https://...")
-            + "</div>",
-            "Add certification",
-        )
-        + "</div>"
-    )
+    evidenced_skills = [
+        {"name": s.get("name"), "evidence_count": s.get("evidence_count", 0)}
+        for s in graph.evidenced_skills[:80]
+    ]
 
-    # ---------------------------------------------------------------- skills
-    body += '<h2 class="rise">Skills</h2>'
-    evidenced = graph.evidenced_skills
-    body += (
-        f'<p class="muted">{len(evidenced)} with evidence, {len(unevidenced)} without. '
-        "A skill with no evidence never reaches a resume, however loudly a posting asks "
-        "for it -- attach it to a position or accomplishment above to make it usable.</p>"
-    )
-    if evidenced:
-        body += '<div class="card">' + " ".join(
-            pill(f'{esc(s.get("name"))} &middot; {s.get("evidence_count", 0)}', "good")
-            for s in evidenced[:80]
-        ) + "</div>"
-    if unevidenced:
-        body += (
-            '<div class="card">'
-            + notice(
-                "These are claimed but nothing proves them, so they stay off every resume:",
-                [str(s.get("name")) for s in unevidenced[:40]],
-                tone="warn",
-            )
-            + "</div>"
-        )
-
-    body += (
-        '<div class="card"><h3>Add a skill</h3>'
-        '<p class="muted">Adding a skill here records the claim. It only becomes usable '
-        "once something demonstrates it -- list it on a position or accomplishment above, "
-        "or run <span class=\"mono\">jobsearch link</span> to scan your records for it.</p>"
-        + form(
-            "/profile/skill/add",
-            token,
-            '<div class="grid2">'
-            + field("name", "Skill", "", placeholder="PostgreSQL")
-            + field("proficiency", "Proficiency", "working", kind="select",
-                    options=["familiar", "working", "advanced", "expert"])
-            + "</div>",
-            "Add skill",
-        )
-        + "</div>"
-    )
-
-    body += (
-        f'<p class="muted" style="margin-top:26px">'
-        f'{counts.get("experiences", 0)} positions &middot; '
-        f'{counts.get("accomplishments", 0)} accomplishments &middot; '
-        f'{counts.get("skills", 0)} skills</p>'
-    )
-    return layout("Your history", body, active="/profile/build")
+    data = {
+        "nav": _nav_counts(conn),
+        "page": "profile_build",
+        "token": token,
+        "empty": not graph.experiences,
+        "counts": counts,
+        "positions": positions,
+        "education": education,
+        "projects": projects,
+        "certifications": certifications,
+        "evidenced_skills": evidenced_skills,
+        "unevidenced_skills": [str(s.get("name")) for s in unevidenced[:40]],
+    }
+    return _react_page("Your history", "profile", data)
 
 
 # --------------------------------------------------------------------------- terminal
@@ -1097,6 +790,168 @@ def _discovery(conn: sqlite3.Connection) -> list[tuple[str, float]]:
     return [(str(r["day"])[5:], float(r["n"])) for r in reversed(rows)]
 
 
+def _nav_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    """Small counts the nav shell needs everywhere (e.g. a real badge on the
+    Queue item), so every `_react_page` call can carry the same shape."""
+    queued = conn.execute(
+        "SELECT COUNT(*) n FROM applications WHERE status = 'drafted'"
+    ).fetchone()["n"]
+    return {"queued": int(queued)}
+
+
+def _country_pins(rows: list[tuple[str, float]], *, limit: int = 8) -> list[dict[str, Any]]:
+    """Turn `_postings_by_country`-shaped rows into map pins with a real
+    projected position, using `geo.COUNTRY_CENTROIDS`. A country this app's
+    data names but that has no centroid entry is skipped rather than guessed
+    at -- see `geo.py` for why the centroid table is deliberately small.
+    """
+    pins = []
+    for name, value in rows[:limit]:
+        centroid = geo.COUNTRY_CENTROIDS.get(name)
+        if not centroid:
+            continue
+        top, left = geo.project_equirect(*centroid)
+        pins.append(
+            {
+                "name": name,
+                "value": value,
+                "flag": geo.flag_emoji(name),
+                "top": round(top, 2),
+                "left": round(left, 2),
+            }
+        )
+    return pins
+
+
+def _sent_vs_discovered(conn: sqlite3.Connection, *, days: int = 14) -> dict[str, Any]:
+    """Two genuinely distinct real series over the same day buckets: postings
+    discovered and applications sent, so the two-series bar chart in the
+    reference layout has real second series rather than an invented one."""
+    disc_rows = conn.execute(
+        "SELECT substr(discovered_at, 1, 10) AS day, COUNT(*) AS n "
+        "FROM jobs WHERE discovered_at IS NOT NULL "
+        "GROUP BY day ORDER BY day DESC LIMIT ?",
+        (days,),
+    ).fetchall()
+    sent_rows = conn.execute(
+        "SELECT substr(sent_date, 1, 10) AS day, COUNT(*) AS n "
+        "FROM applications WHERE sent_date IS NOT NULL "
+        "GROUP BY day ORDER BY day DESC LIMIT ?",
+        (days,),
+    ).fetchall()
+    discovered = {str(r["day"]): float(r["n"]) for r in disc_rows}
+    sent = {str(r["day"]): float(r["n"]) for r in sent_rows}
+    days_seen = sorted(set(discovered) | set(sent))
+    return {
+        "days": [d[5:] for d in days_seen],
+        "discovered": [discovered.get(d, 0.0) for d in days_seen],
+        "sent": [sent.get(d, 0.0) for d in days_seen],
+    }
+
+
+def _week_over_week_delta(conn: sqlite3.Connection) -> float | None:
+    """Percent change in postings discovered, last 7 full days vs the 7
+    before that. Returns None (never a fabricated number) when there isn't
+    enough history to compare two full weeks."""
+    rows = conn.execute(
+        "SELECT substr(discovered_at, 1, 10) AS day, COUNT(*) AS n "
+        "FROM jobs WHERE discovered_at IS NOT NULL GROUP BY day ORDER BY day DESC"
+    ).fetchall()
+    if len(rows) < 14:
+        return None
+    counts = [float(r["n"]) for r in rows]
+    last7 = sum(counts[0:7])
+    prev7 = sum(counts[7:14])
+    if prev7 == 0:
+        return None
+    return round((last7 - prev7) / prev7 * 100.0, 2)
+
+
+def _postings_by_country(conn: sqlite3.Connection) -> list[tuple[str, float]]:
+    """Real country counts, from postings' own location text.
+
+    A posting only counts toward a country when that country's name actually
+    appears in its location string (`geo.extract_countries`) -- "Remote" alone,
+    or an unrecognized city, counts toward none. A compound posting like
+    "Remote (US/UK)" counts toward both, because it genuinely reaches both.
+    """
+    counts: dict[str, float] = {}
+    rows = conn.execute(
+        "SELECT location FROM jobs WHERE location IS NOT NULL AND location != ''"
+    )
+    for row in rows:
+        for country in geo.extract_countries(row["location"]):
+            counts[country] = counts.get(country, 0.0) + 1.0
+    return sorted(counts.items(), key=lambda item: item[1], reverse=True)
+
+
+def _applications_by_country(conn: sqlite3.Connection) -> list[tuple[str, float]]:
+    """Same idea, but for where applications actually went -- joined through to
+    the job's own location rather than duplicating it onto `applications`."""
+    counts: dict[str, float] = {}
+    rows = conn.execute(
+        "SELECT jobs.location AS location FROM applications "
+        "JOIN jobs ON jobs.id = applications.job_id "
+        "WHERE jobs.location IS NOT NULL AND jobs.location != ''"
+    )
+    for row in rows:
+        for country in geo.extract_countries(row["location"]):
+            counts[country] = counts.get(country, 0.0) + 1.0
+    return sorted(counts.items(), key=lambda item: item[1], reverse=True)
+
+
+def reach(conn: sqlite3.Connection) -> str:
+    """Where postings come from and where applications go. Every figure here
+    is one already computed for `/terminal`, or a small extension of the same
+    queries (see `_postings_by_country`/`_applications_by_country`).
+    """
+    total = conn.execute("SELECT COUNT(*) n FROM jobs").fetchone()["n"]
+    sources = len(conn.execute("SELECT DISTINCT source FROM jobs").fetchall())
+    sent = conn.execute(
+        "SELECT COUNT(*) n FROM applications WHERE status = 'sent'"
+    ).fetchone()["n"]
+    remote, onsite = _remote_split(conn)
+    by_source = _by_source(conn)
+    by_location = _by_location(conn)
+    src_rows, band_cols, fit_cells = _fit_by_source(conn)
+    discovery = _discovery(conn)
+    postings_by_country = _postings_by_country(conn)
+    applications_by_country = _applications_by_country(conn)
+    country_pins = _country_pins(postings_by_country)
+    sent_vs_discovered = _sent_vs_discovered(conn)
+    delta = _week_over_week_delta(conn)
+
+    grid = [
+        [fit_cells.get((source, band), 0.0) for band in band_cols]
+        for source in src_rows
+    ]
+
+    data = {
+        "nav": _nav_counts(conn),
+        "stats": [
+            {
+                "label": "postings sourced",
+                "value": f"{total:,}",
+                **({"delta": delta} if delta is not None else {}),
+            },
+            {"label": "remote postings", "value": f"{int(remote):,}"},
+            {"label": "boards tracked", "value": f"{sources:,}"},
+            {"label": "applications sent", "value": f"{sent:,}"},
+        ],
+        "by_source": by_source,
+        "by_location": by_location,
+        "postings_by_country": postings_by_country,
+        "applications_by_country": applications_by_country,
+        "country_pins": country_pins,
+        "sent_vs_discovered": sent_vs_discovered,
+        "discovery": discovery,
+        "remote": remote,
+        "onsite": onsite,
+        "fit_by_source": {"rows": src_rows, "cols": band_cols, "grid": grid},
+    }
+    return _react_page("Reach", "reach", data)
+
+
 def _funnel(conn: sqlite3.Connection) -> list[tuple[str, float]]:
     """Where postings stop. Each stage counts everything that reached it."""
     total = conn.execute("SELECT COUNT(*) n FROM jobs").fetchone()["n"]
@@ -1131,6 +986,30 @@ def _top_skills(conn: sqlite3.Connection) -> list[tuple[str, float]]:
         "GROUP BY s.id ORDER BY n DESC, s.name LIMIT 8"
     ).fetchall()
     return [(str(r["name"]), float(r["n"])) for r in rows]
+
+
+def funnel(conn: sqlite3.Connection) -> str:
+    """Where postings stop, and whether your profile can even claim the
+    skills a role wants. Same queries `/terminal` already runs (`_funnel`,
+    `_fit_histogram`, `_top_skills`, the evidenced/unevidenced skill counts);
+    nothing here is computed twice with different logic that could quietly
+    drift from what `/terminal` shows.
+    """
+    stages = _funnel(conn)
+    fit_histogram = _fit_histogram(conn)
+    evidenced = len(db.skill_evidence_counts(conn))
+    unevidenced = len(db.unevidenced_skills(conn))
+    top_skills = _top_skills(conn)
+
+    data = {
+        "nav": _nav_counts(conn),
+        "stages": stages,
+        "fit_histogram": fit_histogram,
+        "evidenced": evidenced,
+        "unevidenced": unevidenced,
+        "top_skills": top_skills,
+    }
+    return _react_page("Funnel", "funnel", data)
 
 
 def terminal(conn: sqlite3.Connection) -> str:

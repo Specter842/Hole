@@ -19,6 +19,8 @@ from .assets import SITE_JS
 NAV = (
     ("/", "Dashboard"),
     ("/terminal", "Terminal"),
+    ("/reach", "Reach"),
+    ("/funnel", "Funnel"),
     ("/jobs", "Jobs"),
     ("/queue", "Queue"),
     ("/profile/build", "History"),

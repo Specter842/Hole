@@ -146,7 +146,12 @@ class EscapingTests(WebTestCase):
         # asks the sharper question: does the board's payload survive as markup?
         self.assertNotIn(XSS, body)
         self.assertIn("&lt;script&gt;", body)
-        self.assertEqual(body.count("<script>"), 1)
+        # Two "<script>" substrings on a React-rendered page: the one real
+        # wrapping tag around the built bundle, plus a literal
+        # "<script><\/script>" string inside react-dom's own bundled code
+        # (a feature-detection probe, not markup). Neither is the board's
+        # payload -- that's the assertNotIn(XSS, ...) above.
+        self.assertEqual(body.count("<script>"), 2)
 
     def test_company_name_is_escaped_in_listings(self) -> None:
         conn = db.connect(self.db_path)
@@ -166,9 +171,10 @@ class EscapingTests(WebTestCase):
         conn.commit()
         conn.close()
         _status, body = self.app.get("/jobs", {})
-        # One legitimate script -- the chart engine. Assert the payload, not the tag.
+        # Two "<script>" substrings on a React-rendered page -- see the
+        # comment in test_job_description_is_escaped_on_the_detail_page.
         self.assertNotIn(XSS, body)
-        self.assertEqual(body.count("<script>"), 1)
+        self.assertEqual(body.count("<script>"), 2)
         self.assertIn("&lt;script&gt;", body)
 
     def test_generated_documents_are_escaped(self) -> None:
@@ -176,9 +182,10 @@ class EscapingTests(WebTestCase):
         bundle.mkdir(exist_ok=True)
         (bundle / "resume.md").write_text(f"# Resume\n{XSS}", encoding="utf-8")
         _status, body = self.app.get(f"/applications/{self.app_id}", {})
-        # One legitimate script -- the chart engine. Assert the payload, not the tag.
+        # Two "<script>" substrings on a React-rendered page -- see the
+        # comment in test_job_description_is_escaped_on_the_detail_page.
         self.assertNotIn(XSS, body)
-        self.assertEqual(body.count("<script>"), 1)
+        self.assertEqual(body.count("<script>"), 2)
         self.assertIn("&lt;script&gt;", body)
 
 
@@ -202,8 +209,15 @@ class CsrfTests(WebTestCase):
         self.assertEqual(app["status"], "drafted")
 
     def test_forms_carry_the_token(self) -> None:
+        # This page is now React-mounted (jobsearch/web/pages.py's
+        # application_detail() calls _react_page()): the approve/reject
+        # forms are built client-side from the JSON payload, so the token
+        # never appears as a literal `value="..."` attribute in the raw
+        # server response -- it appears as data, inside the data-payload
+        # JSON blob the client hydrates the real <form> from.
         _status, body = self.app.get(f"/applications/{self.app_id}", {})
-        self.assertIn(f'value="{TOKEN}"', body)
+        self.assertIn(TOKEN, body)
+        self.assertIn('data-payload=', body)
 
 
 class ActionTests(WebTestCase):

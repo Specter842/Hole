@@ -92,6 +92,10 @@ class App:
                 return (200, html) if html else _page("No such job", f"Job {parts[1]} is not in the database.", 404)
             if parts == ["terminal"]:
                 return 200, pages.terminal(conn)
+            if parts == ["reach"]:
+                return 200, pages.reach(conn)
+            if parts == ["funnel"]:
+                return 200, pages.funnel(conn)
             if parts == ["queue"]:
                 return 200, pages.queue(conn)
             if len(parts) == 2 and parts[0] == "applications" and parts[1].isdigit():
@@ -453,11 +457,18 @@ def _handler_class(app: App) -> type[BaseHTTPRequestHandler]:
             # every other inline script stays refused, including anything a job
             # description manages to smuggle through. `data:` is for the grain
             # texture, which is an inline SVG.
+            script_src = f"'{assets.SITE_JS_HASH}'"
+            if assets.REACT_BUNDLE_JS_HASH:
+                # Only the Reach/Funnel pages emit a second inline script (the
+                # built React bundle); every other page still carries just
+                # SITE_JS_HASH, so allow-listing this hash too is a no-op
+                # everywhere else.
+                script_src += f" '{assets.REACT_BUNDLE_JS_HASH}'"
             self.send_header(
                 "Content-Security-Policy",
                 "default-src 'none'; "
                 "style-src 'unsafe-inline'; "
-                f"script-src '{assets.SITE_JS_HASH}'; "
+                f"script-src {script_src}; "
                 "img-src 'self' data:; "
                 "form-action 'self'",
             )

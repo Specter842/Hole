@@ -11,6 +11,36 @@ accessible view -- no value is ever reachable only by hovering.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+# --------------------------------------------------------------------------- react bundle
+#
+# The Reach and Funnel pages are React (see frontend/). The build
+# (`npm run build` in frontend/, or the `build_frontend` helper below) writes
+# a single self-contained IIFE bundle.js and bundle.css to frontend/dist/.
+#
+# Those two files are read here and inlined directly into the page, the same
+# way SITE_JS below is -- this server's CSP is `default-src 'none'` with
+# `script-src` allowed only by exact hash of the inline script body, so a
+# `<script src=...>` pointing at a static file (let alone a CDN) is not an
+# option. `REACT_BUNDLE_JS_HASH` is what server.py adds to that CSP header,
+# and only for the two routes that actually use it.
+
+_FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+
+def _read_dist(name: str) -> str:
+    try:
+        return (_FRONTEND_DIST / name).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+REACT_BUNDLE_JS = _read_dist("bundle.js")
+REACT_BUNDLE_CSS = _read_dist("bundle.css")
+REACT_BUNDLE_AVAILABLE = bool(REACT_BUNDLE_JS)
+
+
 # --------------------------------------------------------------------------- js
 
 SITE_JS = r"""
@@ -633,3 +663,11 @@ def _sha256_of(script: str) -> str:
 
 
 SITE_JS_HASH = _sha256_of(SITE_JS)
+
+# The React bundle is inlined with a data payload appended ahead of it (see
+# pages.py's `_react_page`), and CSP hashes the exact bytes of the inline
+# script -- so this hash is computed per-request from the actual script body,
+# not from the static bundle alone. `REACT_BUNDLE_JS_HASH` below covers the
+# case (rare, but real for `/reach`/`/funnel` with no data) where nothing is
+# appended; server.py always recomputes the hash for what it actually sends.
+REACT_BUNDLE_JS_HASH = _sha256_of(REACT_BUNDLE_JS) if REACT_BUNDLE_JS else ""

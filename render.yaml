@@ -16,7 +16,7 @@ services:
     name: jobsearch
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && npm --prefix frontend ci && npm --prefix frontend run build
     startCommand: python -m jobsearch web --host 0.0.0.0 --port $PORT --no-browser
     healthCheckPath: /
     disk:

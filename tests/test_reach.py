@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from jobsearch import db  # noqa: E402
 from jobsearch.config import Config  # noqa: E402
-from jobsearch.web import charts, pages  # noqa: E402
+from jobsearch.web import charts, geo, pages  # noqa: E402
 from jobsearch.web.assets import SITE_JS  # noqa: E402
 from jobsearch.web.server import App  # noqa: E402
 
@@ -182,6 +182,99 @@ class QueryTests(unittest.TestCase):
         _sources, bands, _cells = pages._fit_by_source(self.conn)
         self.assertEqual(bands, [str(n) for n in range(0, 100, 10)])
 
+    def test_postings_by_country_only_counts_named_countries(self) -> None:
+        self._job(location="Berlin, Germany")
+        self._job(location="Remote (US/UK)")
+        self._job(location="Remote")  # no country named -- must not appear at all
+        self._job(location="Cambridge")  # ambiguous city -- must not be guessed
+        self.conn.commit()
+        rows = dict(pages._postings_by_country(self.conn))
+        self.assertEqual(rows.get("Germany"), 1.0)
+        self.assertEqual(rows.get("United States"), 1.0)
+        self.assertEqual(rows.get("United Kingdom"), 1.0)
+        self.assertEqual(sum(rows.values()), 3.0)  # not 4 -- the two skipped rows add nothing
+
+    def test_applications_by_country_follows_the_jobs_join(self) -> None:
+        self._job(location="Paris, France")
+        self.conn.commit()
+        job_id = self.conn.execute("SELECT id FROM jobs").fetchone()["id"]
+        db.insert_application(self.conn, {"job_id": job_id, "status": "sent"})
+        self.conn.commit()
+        rows = dict(pages._applications_by_country(self.conn))
+        self.assertEqual(rows.get("France"), 1.0)
+
+
+class GeoTests(unittest.TestCase):
+    def test_a_named_country_matches_case_insensitively(self) -> None:
+        self.assertEqual(geo.extract_countries("remote - germany"), ["Germany"])
+
+    def test_a_compound_string_returns_every_country_named(self) -> None:
+        self.assertEqual(
+            geo.extract_countries("Remote (US/UK)"), ["United States", "United Kingdom"]
+        )
+
+    def test_remote_alone_matches_nothing(self) -> None:
+        self.assertEqual(geo.extract_countries("Remote"), [])
+
+    def test_an_unrecognized_city_is_not_guessed_into_a_country(self) -> None:
+        self.assertEqual(geo.extract_countries("Cambridge"), [])
+
+    def test_an_abbreviation_does_not_fire_inside_an_unrelated_word(self) -> None:
+        # "US" must not match inside "USABLE" or similar -- whole-word only.
+        self.assertEqual(geo.extract_countries("Usable Systems Inc, Austin"), [])
+
+    def test_none_and_empty_are_handled(self) -> None:
+        self.assertEqual(geo.extract_countries(None), [])
+        self.assertEqual(geo.extract_countries(""), [])
+
+
+class ReachPageIntegrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self._tmp.cleanup)
+        self.db_path = Path(self._tmp.name) / "t.db"
+        self.app = App(str(self.db_path), Config(), "tok")
+
+    def test_reach_renders_real_numbers(self) -> None:
+        conn = db.connect(self.db_path)
+        db.insert_row(conn, "jobs", {
+            "source": "greenhouse", "company": "Acme", "title": "Engineer",
+            "location": "Berlin, Germany", "remote": 1, "fingerprint": "fp-1",
+            "discovered_at": "2026-08-14T10:00:00",
+        })
+        conn.commit()
+        conn.close()
+
+        status, body = self.app.get("/reach", {})
+        self.assertEqual(status, 200)
+        self.assertIn("Germany", body)
+
+    def test_it_survives_a_completely_empty_database(self) -> None:
+        # /reach is now the React port (frontend/): the server just embeds a
+        # JSON payload and lets the client render, so the old "Nothing to
+        # plot yet" SSR empty-state text no longer applies here -- that
+        # string is still asserted on /terminal below, which still uses the
+        # server-rendered charts.py engine. The thing this test actually
+        # guards is that an empty database doesn't blow up the page.
+        status, body = self.app.get("/reach", {})
+        self.assertEqual(status, 200)
+        self.assertIn('id="jobsearch-react-root"', body)
+        self.assertIn('data-route="reach"', body)
+
+    def test_by_country_section_lists_every_country_a_compound_posting_names(self) -> None:
+        conn = db.connect(self.db_path)
+        db.insert_row(conn, "jobs", {
+            "source": "greenhouse", "company": "Acme", "title": "Engineer",
+            "location": "Remote (US/UK)", "remote": 1, "fingerprint": "fp-1",
+            "discovered_at": "2026-08-14T10:00:00",
+        })
+        conn.commit()
+        conn.close()
+
+        _status, body = self.app.get("/reach", {})
+        self.assertIn("United States", body)
+        self.assertIn("United Kingdom", body)
+
 
 class EngineTests(unittest.TestCase):
     def test_donut_and_heatmap_are_registered(self) -> None:
@@ -213,6 +306,32 @@ class TerminalPageIntegrationTests(unittest.TestCase):
         status, body = self.app.get("/terminal", {})
         self.assertEqual(status, 200)
         self.assertIn("Nothing to plot yet", body)
+
+
+class FunnelPageIntegrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self._tmp.cleanup)
+        self.db_path = Path(self._tmp.name) / "t.db"
+        self.app = App(str(self.db_path), Config(), "tok")
+
+    def test_funnel_renders_the_fallback_with_real_stage_counts(self) -> None:
+        conn = db.connect(self.db_path)
+        db.insert_row(conn, "jobs", {
+            "source": "greenhouse", "company": "Acme", "title": "Engineer",
+            "location": "Remote", "fingerprint": "fp-1",
+            "discovered_at": "2026-08-14T10:00:00",
+        })
+        conn.commit()
+        conn.close()
+
+        status, body = self.app.get("/funnel", {})
+        self.assertEqual(status, 200)
+        self.assertIn("sourced", body)
+
+    def test_it_survives_a_completely_empty_database(self) -> None:
+        status, body = self.app.get("/funnel", {})
+        self.assertEqual(status, 200)
 
 
 if __name__ == "__main__":

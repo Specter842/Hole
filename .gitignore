@@ -41,3 +41,10 @@ __pycache__/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Frontend build (compiled by `npm run build` in frontend/, see render.yaml)
+frontend/node_modules/
+frontend/dist/
+
+# Local dev server log
+server.log
