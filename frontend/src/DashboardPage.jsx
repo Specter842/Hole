@@ -2,7 +2,7 @@ import React from 'react'
 import { C } from './tokens.js'
 import { MetricCard, Panel, Empty } from './components.jsx'
 import RankedList from './RankedList.jsx'
-import { WorldMap, SourceBars } from './ReachPage.jsx'
+import { WorldMap, SourceBars, DiscoveredVsSent, RemoteDonut, FitHeatmap } from './ReachPage.jsx'
 
 // Same tone vocabulary the server-rendered pages use (STATUS_TONE / notice()
 // in jobsearch/web/pages.py, html.py) -- "bad"/"warn" map to the one red this
@@ -96,6 +96,7 @@ export default function DashboardPage({ data }) {
   const {
     notices, stats, jobs_by_status, apps_by_status, model, last_run,
     country_pins, postings_by_country, by_source, by_location,
+    sent_vs_discovered, remote, onsite, fit_by_source,
   } = data
 
   const totalPostings = (postings_by_country || []).reduce((s, [, v]) => s + v, 0)
@@ -131,6 +132,18 @@ export default function DashboardPage({ data }) {
         </Panel>
         <Panel title="Applications by status">
           <StatusPills rows={apps_by_status} />
+        </Panel>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-6 mb-6">
+        <Panel title="Discovered vs sent">
+          <DiscoveredVsSent series={sent_vs_discovered} />
+        </Panel>
+        <Panel title="Remote vs onsite">
+          <RemoteDonut remote={remote} onsite={onsite} />
+        </Panel>
+        <Panel title="Fit score by source">
+          <FitHeatmap rows={fit_by_source.rows} cols={fit_by_source.cols} grid={fit_by_source.grid} />
         </Panel>
       </div>
 

@@ -155,7 +155,15 @@ def dashboard(conn: sqlite3.Connection, config: Config) -> str:
     last_run = db.row_to_dict(last) if last else None
 
     postings_by_country = _postings_by_country(conn)
+    applications_by_country = _applications_by_country(conn)
     country_pins = _country_pins(postings_by_country)
+    remote, onsite = _remote_split(conn)
+    src_rows, band_cols, fit_cells = _fit_by_source(conn)
+    fit_grid = [
+        [fit_cells.get((source, band), 0.0) for band in band_cols]
+        for source in src_rows
+    ]
+    sent_vs_discovered = _sent_vs_discovered(conn)
 
     data = {
         "nav": _nav_counts(conn),
@@ -185,9 +193,14 @@ def dashboard(conn: sqlite3.Connection, config: Config) -> str:
             else None
         ),
         "postings_by_country": postings_by_country,
+        "applications_by_country": applications_by_country,
         "country_pins": country_pins,
         "by_source": _by_source(conn),
         "by_location": _by_location(conn),
+        "sent_vs_discovered": sent_vs_discovered,
+        "remote": remote,
+        "onsite": onsite,
+        "fit_by_source": {"rows": src_rows, "cols": band_cols, "grid": fit_grid},
     }
     return _react_page("Dashboard", "", data)
 
