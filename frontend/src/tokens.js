@@ -12,5 +12,6 @@ export const C = {
   tealDark: '#33474A',
   barDark: '#121517',
   red: '#EF5A5A',
-  mapLand: '#3A3D42',
+  mapLand: '#3A3A3A',
+  mapBorder: '#565656',
 }

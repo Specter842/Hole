@@ -10,7 +10,7 @@ html, body {
   margin: 0;
   background: #0A0A0B;
   color: #FFFFFF;
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 #jobsearch-react-root {
@@ -19,18 +19,18 @@ html, body {
   --border: rgba(255,255,255,0.08);
 }
 
-#jobsearch-react-root .focus-ring:focus-visible {
-  outline: 2px solid #8AD3D8;
-  outline-offset: 2px;
-}
-
-#jobsearch-react-root .icon-btn:hover {
-  background: rgba(255,255,255,0.06);
-}
-
-#jobsearch-react-root .dropdown-item:hover {
-  background: rgba(255,255,255,0.06);
-}
+.dashboard-root input::placeholder { color: #6a6a6e; }
+.dashboard-root ::-webkit-scrollbar { width: 8px; height: 8px; }
+.dashboard-root ::-webkit-scrollbar-thumb { background: #2a2a2d; border-radius: 8px; }
+.nav-btn:hover { background: rgba(255,255,255,0.06) !important; color: #ffffff !important; }
+.icon-btn:hover { background: rgba(255,255,255,0.08) !important; }
+.btn-outline:hover { background: rgba(255,255,255,0.05) !important; border-color: rgba(255,255,255,0.22) !important; }
+.btn-primary:hover { filter: brightness(0.94); }
+.link-teal:hover { color: #B7ECF1 !important; }
+.dropdown-item:hover { background: rgba(255,255,255,0.06) !important; }
+.dash-card { transition: all 0.2s; }
+.dash-card:hover { background: #1a1a1d !important; border-color: rgba(255,255,255,0.16) !important; }
+.focus-ring:focus-visible { outline: 2px solid #8AD3D8; outline-offset: 2px; }
 
 /* Scroll gutter: invisible until hovered, and inset from the content so the
    thumb never sits on top of the last column's numbers. */

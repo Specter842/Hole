@@ -1,16 +1,11 @@
 import React from 'react'
 import {
   Home, Briefcase, ListChecks, UserRound, Globe, Filter, History, FileText,
-  Search, ChevronDown, Download, Info, Settings,
+  Search, Download, Info, Settings,
 } from 'lucide-react'
 import { C } from './tokens.js'
+import { Dropdown, useToast } from './components.jsx'
 
-// Ported from NAV_ANALYTICS/NAV_RESOURCES in estics-reach-dashboard.jsx, but
-// pointed at this app's real routes. The reference's Alerts/Preferences/Docs/
-// Changelog items have no literal equivalent here, so real pages were
-// re-bucketed into the two sections instead: Dashboard/Jobs/Reach/Funnel read
-// as "analytics" surfaces, Queue/Profile/Runs/Answers as "resources" -- the
-// operational/reference pages behind the analytics.
 const NAV_ANALYTICS = [
   { href: '/', label: 'Dashboard', icon: Home },
   { href: '/jobs', label: 'Jobs', icon: Briefcase },
@@ -25,161 +20,160 @@ const NAV_RESOURCES = [
   { href: '/answers', label: 'Answers', icon: FileText },
 ]
 
-function NavItem({ item, active, badge }) {
-  const Icon = item.icon
-  return (
-    <a
-      href={item.href}
-      className="relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors focus-ring"
-      style={{
-        color: active ? C.text : C.textSub,
-        background: active ? C.panelAlt : 'transparent',
-      }}
-    >
-      {active && (
-        <span
-          className="absolute left-[-16px] top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-full"
-          style={{ background: C.orange }}
-        />
-      )}
-      <Icon size={17} style={{ color: active ? C.text : C.textMute }} />
-      <span className="flex-1">{item.label}</span>
-      {!!badge && (
-        <span
-          className="text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center"
-          style={{ background: C.orange, color: C.bg }}
-        >
-          {badge}
-        </span>
-      )}
-    </a>
-  )
-}
+export default function NavShell({ route, title, subtitle, nav = {}, children }) {
+  const [toast, showToast] = useToast()
 
-function SectionLabel({ children }) {
   return (
     <div
-      className="px-3 pt-5 pb-2 text-[10px] font-semibold uppercase tracking-wider"
-      style={{ color: C.textMute }}
+      className="dashboard-root w-full min-h-screen flex"
+      style={{
+        background: C.bg,
+        color: C.text,
+      }}
     >
-      {children}
-    </div>
-  )
-}
-
-export default function NavShell({ route, title, subtitle, nav = {}, children }) {
-  return (
-    <div className="min-h-screen flex flex-col" style={{ background: C.bg }}>
-      <header
-        className="flex items-center gap-4 px-4 md:px-6 h-16 shrink-0"
-        style={{ borderBottom: `1px solid ${C.border}` }}
+      {/* Sidebar */}
+      <aside
+        className="hidden lg:flex w-60 flex-shrink-0 flex-col justify-between py-5 px-4"
+        style={{ borderRight: `1px solid ${C.border}` }}
       >
-        <div className="flex items-center gap-2 w-60 shrink-0">
-          <span
-            className="inline-block w-2.5 h-2.5 rotate-45"
-            style={{ background: C.orange }}
-            aria-hidden="true"
-          />
-          <span className="text-sm font-bold tracking-tight" style={{ color: C.text }}>
-            jobsearch
-          </span>
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <div className="text-base md:text-lg font-bold tracking-tight truncate" style={{ color: C.text }}>
-            {title}
-          </div>
-          {subtitle && (
-            <div className="text-xs truncate" style={{ color: C.textMute }}>
-              {subtitle}
+        <div>
+          <div className="flex items-center gap-2 px-2 mb-6">
+            <div className="h-6 w-6 rounded flex items-center justify-center" style={{ background: C.text }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M4 20L14 4L20 14L10 20" stroke="#0A0A0B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </div>
-          )}
+            <span className="font-bold text-sm tracking-tight">jobsearch</span>
+          </div>
+
+          <div className="font-semibold tracking-wide mb-2 px-2 mt-1" style={{ color: C.textMute, fontSize: '11px' }}>
+            ANALYTICS
+          </div>
+          <nav className="space-y-1 mb-5">
+            {NAV_ANALYTICS.map((item) => {
+              const Icon = item.icon
+              const isActive = item.href.slice(1) === route || (item.href === '/' && route === '')
+              return (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  className="nav-btn focus-ring w-full flex items-center justify-between px-2 py-2 rounded-lg text-sm"
+                  style={{
+                    background: isActive ? C.panelAlt : 'transparent',
+                    borderLeft: isActive ? `3px solid ${C.orange}` : '3px solid transparent',
+                    color: isActive ? C.text : C.textSub,
+                  }}
+                >
+                  <span className="flex items-center gap-2">
+                    <Icon size={16} />
+                    {item.label}
+                  </span>
+                </a>
+              )
+            })}
+          </nav>
+
+          <div className="font-semibold tracking-wide mb-2 px-2" style={{ color: C.textMute, fontSize: '11px' }}>
+            RESOURCES
+          </div>
+          <nav className="space-y-1">
+            {NAV_RESOURCES.map((item) => {
+              const Icon = item.icon
+              const isActive = item.href.slice(1) === route || (item.href === '/' && route === '')
+              const badge = item.badgeKey ? nav[item.badgeKey] : undefined
+              return (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  className="nav-btn focus-ring w-full flex items-center justify-between px-2 py-2 rounded-lg text-sm"
+                  style={{ color: isActive ? C.text : C.textSub, background: isActive ? C.panelAlt : 'transparent' }}
+                >
+                  <span className="flex items-center gap-2">
+                    <Icon size={16} />
+                    {item.label}
+                  </span>
+                  {badge != null && (
+                    <span
+                      className="font-semibold rounded-full flex items-center justify-center"
+                      style={{ background: C.orange, color: '#fff', fontSize: '10px', minWidth: '16px', height: '16px', padding: '0 4px' }}
+                    >
+                      {badge}
+                    </span>
+                  )}
+                </a>
+              )
+            })}
+          </nav>
         </div>
 
-        <div className="hidden lg:flex items-center gap-2">
-          <label className="relative">
-            <Search
-              size={14}
-              className="absolute left-3 top-1/2 -translate-y-1/2"
-              style={{ color: C.textMute }}
-            />
+        <div className="space-y-1">
+          <a href="#" className="nav-btn focus-ring w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm" style={{ color: C.textSub }}>
+            <Info size={16} /> Help & Info
+          </a>
+          <a href="/profile" className="nav-btn focus-ring w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm" style={{ color: C.textSub }}>
+            <Settings size={16} /> Settings
+          </a>
+        </div>
+      </aside>
+
+      {/* Main column */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <header
+          className="h-16 flex items-center justify-between px-6 flex-shrink-0 sticky top-0 z-10"
+          style={{ borderBottom: `1px solid ${C.border}`, background: C.bg }}
+        >
+          <div>
+            <div className="text-base font-semibold truncate">{title}</div>
+            <div className="text-xs truncate" style={{ color: C.textSub }}>{subtitle || 'Last 12 Months'}</div>
+          </div>
+
+          <div className="hidden lg:flex items-center gap-2 rounded-lg px-3 h-9 w-48" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
+            <Search size={14} style={{ color: C.textMute }} />
             <input
               type="text"
               placeholder="Search"
-              aria-label="Search"
-              className="h-9 w-48 rounded-lg pl-9 pr-10 text-xs focus-ring"
-              style={{ background: C.panel, border: `1px solid ${C.border}`, color: C.text }}
-              readOnly
+              className="focus-ring bg-transparent outline-none text-xs flex-1"
+              style={{ color: C.text }}
             />
-            <span
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] px-1.5 py-0.5 rounded"
-              style={{ color: C.textMute, background: C.panelAlt }}
-            >
-              &#8984;K
+            <span className="px-1 rounded" style={{ color: C.textMute, border: `1px solid ${C.border}`, fontSize: '10px' }}>
+              &#8984; K
             </span>
-          </label>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-medium focus-ring"
-            style={{ background: C.panel, border: `1px solid ${C.border}`, color: C.text }}
-          >
-            Year to Date
-            <ChevronDown size={14} style={{ color: C.textSub }} />
-          </button>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-medium focus-ring"
-            style={{ background: C.panel, border: `1px solid ${C.border}`, color: C.text }}
-          >
-            <Info size={14} style={{ color: C.textSub }} />
-            Summary
-          </button>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold focus-ring"
-            style={{ background: C.orange, color: '#1a0d05' }}
-          >
-            <Download size={14} />
-            Download
-          </button>
-        </div>
-      </header>
-
-      <div className="flex flex-1 min-h-0">
-        <aside
-          className="hidden md:flex flex-col shrink-0 w-60 px-4 py-6 gap-1 overflow-y-auto"
-          style={{ borderRight: `1px solid ${C.border}` }}
-        >
-          <SectionLabel>Analytics</SectionLabel>
-          {NAV_ANALYTICS.map((item) => (
-            <NavItem key={item.href} item={item} active={item.href.slice(1) === route} />
-          ))}
-
-          <SectionLabel>Resources</SectionLabel>
-          {NAV_RESOURCES.map((item) => (
-            <NavItem
-              key={item.href}
-              item={item}
-              active={item.href.slice(1) === route}
-              badge={item.badgeKey ? nav[item.badgeKey] : undefined}
-            />
-          ))}
-
-          <div className="flex-1" />
-
-          <div className="flex flex-col gap-1 pt-4" style={{ borderTop: `1px solid ${C.border}` }}>
-            <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs focus-ring" style={{ color: C.textSub }}>
-              <Info size={15} style={{ color: C.textMute }} />
-              Help &amp; Info
-            </a>
-            <a href="/profile" className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs focus-ring" style={{ color: C.textSub }}>
-              <Settings size={15} style={{ color: C.textMute }} />
-              Settings
-            </a>
           </div>
-        </aside>
-        <main className="flex-1 min-w-0 px-6 md:px-10 py-8 md:py-10 overflow-x-hidden">{children}</main>
+
+          <div className="flex items-center gap-3">
+            <Dropdown label="Year to Date" options={['This Month', 'Last Month', 'Last 3 Months', 'Last 12 Months', 'Year to Date']} />
+            <button
+              type="button"
+              onClick={() => showToast('Summary generated')}
+              className="btn-outline focus-ring flex items-center gap-2 px-3 h-9 rounded-lg text-xs font-semibold"
+              style={{ border: `1px solid ${C.border}`, color: C.text }}
+            >
+              <FileText size={14} /> Summary
+            </button>
+            <button
+              type="button"
+              onClick={() => showToast('Download started')}
+              className="btn-primary focus-ring flex items-center gap-2 px-3 h-9 rounded-lg text-xs font-semibold"
+              style={{ background: C.orange, color: '#fff' }}
+            >
+              <Download size={14} /> Download
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-auto p-6">
+          {children}
+        </main>
       </div>
+
+      {toast && (
+        <div
+          className="fixed bottom-6 right-6 px-4 py-3 rounded-lg text-sm font-medium shadow-lg z-50"
+          style={{ background: C.panelAlt, border: `1px solid ${C.border}`, color: C.text }}
+        >
+          {toast}
+        </div>
+      )}
     </div>
   )
 }

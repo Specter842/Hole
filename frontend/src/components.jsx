@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useState, useEffect, useRef } from 'react'
+import { ChevronDown, MoreHorizontal } from 'lucide-react'
 import { C } from './tokens.js'
 
 export function PageHeader({ title, subtitle }) {
@@ -313,5 +314,111 @@ export function ActionButton({ action, token, label, confirm = '', primary = fal
         {label}
       </button>
     </form>
+  )
+}
+
+export function useToast() {
+  const [msg, setMsg] = useState(null)
+  const timer = useRef(null)
+  const show = (m) => {
+    setMsg(m)
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => setMsg(null), 2400)
+  }
+  return [msg, show]
+}
+
+export function useOutsideClose(onClose) {
+  const ref = useRef(null)
+  useEffect(() => {
+    function onDoc(e) {
+      if (ref.current && !ref.current.contains(e.target)) onClose()
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [onClose])
+  return ref
+}
+
+export function Dropdown({ label, options }) {
+  const [open, setOpen] = useState(false)
+  const [selected, setSelected] = useState(label)
+  const ref = useOutsideClose(() => setOpen(false))
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 px-3 h-9 rounded-lg text-xs font-medium focus-ring"
+        style={{ background: C.panel, border: `1px solid ${C.border}`, color: C.text }}
+      >
+        {selected}
+        <ChevronDown size={14} style={{ color: C.textSub }} />
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 mt-1 w-40 rounded-lg overflow-hidden z-20"
+          style={{ background: C.panelAlt, border: `1px solid ${C.border}` }}
+        >
+          {options.map((o) => (
+            <button
+              key={o}
+              type="button"
+              onClick={() => { setSelected(o); setOpen(false) }}
+              className="dropdown-item block w-full text-left px-3 py-2 text-xs"
+              style={{ color: o === selected ? C.teal : C.textSub }}
+            >
+              {o}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function MoreMenu() {
+  const [open, setOpen] = useState(false)
+  const ref = useOutsideClose(() => setOpen(false))
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="More options"
+        className="icon-btn focus-ring h-6 w-6 flex items-center justify-center rounded-md"
+      >
+        <MoreHorizontal size={16} style={{ color: C.textMute }} />
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 mt-1 w-32 rounded-lg overflow-hidden z-20"
+          style={{ background: C.panelAlt, border: `1px solid ${C.border}` }}
+        >
+          {['Export', 'Edit', 'Delete'].map((o) => (
+            <button
+              key={o}
+              type="button"
+              onClick={() => setOpen(false)}
+              className="dropdown-item block w-full text-left px-3 py-2 text-xs"
+              style={{ color: C.textSub }}
+            >
+              {o}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function Card({ children, padded = true, className = '', style = {} }) {
+  return (
+    <div
+      className={`dash-card rounded-xl overflow-hidden ${padded ? 'p-5' : ''} ${className}`}
+      style={{ background: C.panel, border: `1px solid ${C.border}`, ...style }}
+    >
+      {children}
+    </div>
   )
 }
