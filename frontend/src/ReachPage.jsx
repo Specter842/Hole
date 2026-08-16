@@ -59,13 +59,12 @@ export function DiscoveredVsSent({ series }) {
         </span>
       </div>
       <ResponsiveContainer width="100%" height={220}>
-        <BarChart data={data} margin={{ left: -12, right: 8 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.06)" vertical={false} />
+        <BarChart data={data} margin={{ left: -12, right: 8 }} barGap={-18} barCategoryGap="24%">
           <XAxis dataKey="day" tick={{ fill: C.textMute, fontSize: 10 }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fill: C.textMute, fontSize: 10 }} axisLine={false} tickLine={false} />
           <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(255,255,255,.04)' }} />
-          <Bar dataKey="discovered" fill={C.teal} radius={[3, 3, 0, 0]} />
-          <Bar dataKey="sent" fill={C.tealDark} radius={[3, 3, 0, 0]} />
+          <Bar dataKey="sent" fill={C.tealDark} radius={[3, 3, 0, 0]} barSize={18} />
+          <Bar dataKey="discovered" fill={C.teal} radius={[3, 3, 0, 0]} barSize={10} />
         </BarChart>
       </ResponsiveContainer>
     </>
@@ -120,7 +119,7 @@ export function FitHeatmap({ rows, cols, grid }) {
   if (!rows || !rows.length || !cols || !cols.length) return <Empty />
   let max = 0
   grid.forEach((row) => row.forEach((v) => { if (v > max) max = v }))
-  const legendSteps = [0.15, 0.4, 0.65, 0.9]
+  const legendSteps = [0.9, 0.65, 0.4, 0.15]
   return (
     <div>
       <div className="overflow-x-auto">
@@ -224,10 +223,10 @@ export default function ReachPage({ data }) {
       </div>
 
       <div className="grid lg:grid-cols-[1.7fr_1fr] gap-6 mb-6">
-        <Panel title="Global reach by region">
+        <Panel title="Global reach by region" variant="header">
           <WorldMap pins={country_pins} />
         </Panel>
-        <Panel title="Reach by country">
+        <Panel title="Reach by country" variant="header">
           <div className="mb-4">
             <div className="text-2xl font-bold" style={{ color: C.text }}>
               {Math.round(totalPostings).toLocaleString()}
@@ -239,29 +238,29 @@ export default function ReachPage({ data }) {
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6 mb-6">
-        <Panel title="Discovered vs sent">
+        <Panel title="Discovered vs sent" variant="header">
           <DiscoveredVsSent series={sent_vs_discovered} />
         </Panel>
-        <Panel title="Remote vs onsite">
+        <Panel title="Remote vs onsite" variant="header">
           <RemoteDonut remote={remote} onsite={onsite} />
         </Panel>
-        <Panel title="Fit score by source">
+        <Panel title="Fit score by source" variant="header">
           <FitHeatmap rows={fit_by_source.rows} cols={fit_by_source.cols} grid={fit_by_source.grid} />
         </Panel>
       </div>
 
       <div className="grid md:grid-cols-3 gap-6">
-        <Panel title="Source reach" className="md:col-span-2">
+        <Panel title="Source reach" className="md:col-span-2" variant="header">
           <SourceBars rows={by_source} />
         </Panel>
-        <Panel title="Top locations">
+        <Panel title="Top locations" variant="header">
           <RankedList rows={by_location} />
         </Panel>
       </div>
 
       {applications_by_country && applications_by_country.length > 0 && (
         <div className="grid gap-6 mt-6">
-          <Panel title="Applications sent, by country">
+          <Panel title="Applications sent, by country" variant="header">
             <RankedList rows={applications_by_country} />
           </Panel>
         </div>

@@ -42,7 +42,7 @@ function NavItem({ item, active, badge }) {
           style={{ background: C.orange }}
         />
       )}
-      <Icon size={17} style={{ color: active ? C.teal : C.textMute }} />
+      <Icon size={17} style={{ color: active ? C.text : C.textMute }} />
       <span className="flex-1">{item.label}</span>
       {!!badge && (
         <span

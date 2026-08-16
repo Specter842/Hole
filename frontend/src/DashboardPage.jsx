@@ -112,10 +112,10 @@ export default function DashboardPage({ data }) {
       </div>
 
       <div className="grid lg:grid-cols-[1.7fr_1fr] gap-6 mb-6">
-        <Panel title="Global reach">
+        <Panel title="Global reach" variant="header">
           <WorldMap pins={country_pins} />
         </Panel>
-        <Panel title="Reach by country">
+        <Panel title="Reach by country" variant="header">
           <div className="mb-4">
             <div className="text-2xl font-bold" style={{ color: C.text }}>
               {Math.round(totalPostings).toLocaleString()}
@@ -127,40 +127,40 @@ export default function DashboardPage({ data }) {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6 mb-6">
-        <Panel title="Jobs by status">
+        <Panel title="Jobs by status" variant="header">
           <StatusPills rows={jobs_by_status} />
         </Panel>
-        <Panel title="Applications by status">
+        <Panel title="Applications by status" variant="header">
           <StatusPills rows={apps_by_status} />
         </Panel>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6 mb-6">
-        <Panel title="Discovered vs sent">
+        <Panel title="Discovered vs sent" variant="header">
           <DiscoveredVsSent series={sent_vs_discovered} />
         </Panel>
-        <Panel title="Remote vs onsite">
+        <Panel title="Remote vs onsite" variant="header">
           <RemoteDonut remote={remote} onsite={onsite} />
         </Panel>
-        <Panel title="Fit score by source">
+        <Panel title="Fit score by source" variant="header">
           <FitHeatmap rows={fit_by_source.rows} cols={fit_by_source.cols} grid={fit_by_source.grid} />
         </Panel>
       </div>
 
       <div className="grid md:grid-cols-3 gap-6 mb-6">
-        <Panel title="Source reach" className="md:col-span-2">
+        <Panel title="Source reach" className="md:col-span-2" variant="header">
           <SourceBars rows={by_source} />
         </Panel>
-        <Panel title="Top locations">
+        <Panel title="Top locations" variant="header">
           <RankedList rows={by_location} />
         </Panel>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        <Panel title="Last pipeline run">
+        <Panel title="Last pipeline run" variant="header">
           <LastRun run={last_run} />
         </Panel>
-        <Panel title="Model">
+        <Panel title="Model" variant="header">
           <div className="font-mono text-xs" style={{ color: C.textSub }}>{model}</div>
         </Panel>
       </div>

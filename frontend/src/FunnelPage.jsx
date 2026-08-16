@@ -83,19 +83,19 @@ export default function FunnelPage({ data }) {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6 mb-6">
-        <Panel title="Fit score distribution">
+        <Panel title="Fit score distribution" variant="header">
           <ColumnChart rows={fit_histogram} color={C.orange} />
         </Panel>
-        <Panel title="Postings reaching each stage">
+        <Panel title="Postings reaching each stage" variant="header">
           <FunnelBars rows={stages} />
         </Panel>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        <Panel title="Claimable vs unusable">
+        <Panel title="Claimable vs unusable" variant="header">
           <SplitBar evidenced={evidenced} unevidenced={unevidenced} />
         </Panel>
-        <Panel title="Most-evidenced skills">
+        <Panel title="Most-evidenced skills" variant="header">
           <ColumnChart rows={top_skills} color={C.teal} />
         </Panel>
       </div>

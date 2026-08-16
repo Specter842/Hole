@@ -62,15 +62,22 @@ export function MetricCard({ label, value, delta }) {
   )
 }
 
-export function Panel({ title, children, className = '', menu = true }) {
+export function Panel({ title, children, className = '', menu = true, variant = 'label' }) {
   return (
     <div
-      className={`rounded-xl p-6 ${className}`}
+      className={`rounded-xl p-5 ${className}`}
       style={{ background: C.panel, border: `1px solid ${C.border}` }}
     >
       {title && (
         <div className="flex items-center justify-between mb-5">
-          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.textSub }}>
+          <div
+            className={
+              variant === 'header'
+                ? 'text-sm font-semibold'
+                : 'text-xs font-semibold uppercase tracking-wide'
+            }
+            style={{ color: variant === 'header' ? C.text : C.textSub }}
+          >
             {title}
           </div>
           {menu && <MoreDots />}
