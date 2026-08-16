@@ -273,7 +273,7 @@ export default function ReachPage({ data }) {
           </button>
         </div>
         <div className="flex gap-5 px-5 pb-5">
-          <div className="flex-1 relative rounded-lg overflow-hidden" style={{ minHeight: '340px', background: C.panelAlt }}>
+          <div className="flex-1 relative rounded-lg overflow-hidden" style={{ aspectRatio: '2 / 1', maxHeight: 340, background: C.panelAlt }}>
             <WorldMap pins={country_pins} />
           </div>
           <div className="w-72 flex-shrink-0 rounded-lg p-4" style={{ background: C.panelAlt }}>

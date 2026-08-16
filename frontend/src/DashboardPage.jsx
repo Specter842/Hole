@@ -113,7 +113,9 @@ export default function DashboardPage({ data }) {
 
       <div className="grid lg:grid-cols-[1.7fr_1fr] gap-6 mb-6">
         <Panel title="Global reach" variant="header">
-          <WorldMap pins={country_pins} />
+          <div className="relative w-full rounded-lg overflow-hidden" style={{ aspectRatio: '2 / 1', maxHeight: 340, background: C.panelAlt }}>
+            <WorldMap pins={country_pins} />
+          </div>
         </Panel>
         <Panel title="Reach by country" variant="header">
           <div className="mb-4">
