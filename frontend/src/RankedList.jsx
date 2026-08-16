@@ -9,8 +9,8 @@ export default function RankedList({ rows, maxHeight }) {
   const max = Math.max(...rows.map((r) => r[1]), 1)
   return (
     <ol
-      className="flex flex-col"
-      style={maxHeight ? { maxHeight, overflowY: 'auto' } : undefined}
+      className={`flex flex-col ${maxHeight ? 'hover-scroll' : ''}`}
+      style={maxHeight ? { maxHeight, overflowY: 'auto', marginRight: -14 } : undefined}
     >
       {rows.map((row, i) => (
         <li

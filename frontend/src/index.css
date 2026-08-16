@@ -31,3 +31,27 @@ html, body {
 #jobsearch-react-root .dropdown-item:hover {
   background: rgba(255,255,255,0.06);
 }
+
+/* Scroll gutter: invisible until hovered, and inset from the content so the
+   thumb never sits on top of the last column's numbers. */
+#jobsearch-react-root .hover-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  padding-right: 14px;
+}
+#jobsearch-react-root .hover-scroll:hover {
+  scrollbar-color: rgba(255,255,255,0.2) transparent;
+}
+#jobsearch-react-root .hover-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+#jobsearch-react-root .hover-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+#jobsearch-react-root .hover-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+#jobsearch-react-root .hover-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.2);
+}
