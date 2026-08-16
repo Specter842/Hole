@@ -169,6 +169,53 @@ function FitHeatmap({ rows, cols, grid }) {
   )
 }
 
+// Very low-detail continent silhouettes, expressed as [lon, lat] vertices and
+// projected with the exact same plain equirectangular formula as the backend's
+// geo.project_equirect (see jobsearch/web/geo.py) -- x = (lon+180)/360*100,
+// y = (90-lat)/180*50 -- so a pin's top/left % always lands on its own
+// landmass in this backdrop, not just near it.
+const CONTINENTS = [
+  // North America
+  [[-165, 68], [-140, 70], [-95, 75], [-80, 73], [-70, 60], [-55, 52], [-60, 45],
+    [-65, 40], [-75, 35], [-80, 25], [-90, 15], [-85, 10], [-92, 14], [-105, 20],
+    [-115, 28], [-124, 40], [-124, 48], [-130, 55], [-140, 60], [-165, 68]],
+  // South America
+  [[-80, 10], [-77, 5], [-70, -5], [-70, -18], [-72, -30], [-70, -40], [-68, -52],
+    [-65, -55], [-58, -52], [-55, -35], [-48, -25], [-40, -10], [-50, 0],
+    [-60, 5], [-70, 8], [-80, 10]],
+  // Europe
+  [[-10, 36], [-9, 43], [0, 49], [5, 51], [10, 54], [20, 55], [25, 60], [30, 65],
+    [20, 70], [10, 71], [-5, 63], [-10, 55], [-10, 45], [-10, 36]],
+  // Africa
+  [[-17, 15], [-10, 5], [10, 4], [9, -5], [12, -18], [18, -35], [30, -30],
+    [35, -20], [40, -5], [42, 5], [48, 10], [45, 15], [38, 20], [33, 31],
+    [25, 32], [10, 33], [-5, 35], [-10, 30], [-17, 15]],
+  // Asia
+  [[30, 68], [45, 70], [60, 72], [75, 73], [90, 75], [110, 73], [130, 70],
+    [145, 62], [140, 50], [130, 45], [125, 38], [122, 30], [115, 22], [105, 10],
+    [100, 5], [95, 15], [90, 22], [85, 25], [75, 20], [70, 25], [68, 35],
+    [60, 38], [50, 40], [45, 38], [40, 42], [35, 42], [28, 42], [28, 55], [30, 68]],
+  // Australia
+  [[113, -22], [120, -20], [130, -12], [137, -12], [142, -11], [145, -17],
+    [150, -22], [153, -28], [150, -35], [145, -38], [140, -38], [135, -35],
+    [129, -32], [122, -34], [115, -33], [113, -22]],
+]
+
+function projectXY(lon, lat) {
+  const x = ((lon + 180) / 360) * 100
+  const y = ((90 - lat) / 180) * 50
+  return [x, y]
+}
+
+function continentPath(vertices) {
+  return vertices
+    .map(([lon, lat], i) => {
+      const [x, y] = projectXY(lon, lat)
+      return `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`
+    })
+    .join(' ') + ' Z'
+}
+
 export function WorldMap({ pins }) {
   if (!pins || !pins.length) return <Empty />
   return (
@@ -176,13 +223,13 @@ export function WorldMap({ pins }) {
       className="relative w-full rounded-lg overflow-hidden"
       style={{ aspectRatio: '2 / 1', background: C.panelAlt }}
     >
-      {/* A flat, unlabelled silhouette stand-in -- pins are positioned by real
-          equirectangular-projected lat/lon (see geo.project_equirect), not by
-          eyeballing this backdrop. */}
+      {/* Flat gray continent silhouettes -- no borders, no labels -- with
+          pins positioned by real equirectangular-projected lat/lon (see
+          geo.project_equirect) on top. */}
       <svg viewBox="0 0 100 50" className="absolute inset-0 w-full h-full" preserveAspectRatio="none">
         <rect x="0" y="0" width="100" height="50" fill={C.panelAlt} />
-        {[10, 20, 30, 40].map((y) => (
-          <line key={y} x1="0" y1={y} x2="100" y2={y} stroke="rgba(255,255,255,.04)" strokeWidth="0.2" />
+        {CONTINENTS.map((vertices, i) => (
+          <path key={i} d={continentPath(vertices)} fill={C.mapLand} stroke="none" />
         ))}
       </svg>
       {pins.map((pin) => (
