@@ -4,11 +4,14 @@ import { Empty } from './components.jsx'
 
 // Ported from the reference dashboard's `regions` ranked list -- a rank
 // number, a label, a proportional bar, and the raw value.
-export default function RankedList({ rows }) {
+export default function RankedList({ rows, maxHeight }) {
   if (!rows || !rows.length) return <Empty />
   const max = Math.max(...rows.map((r) => r[1]), 1)
   return (
-    <ol className="flex flex-col">
+    <ol
+      className="flex flex-col"
+      style={maxHeight ? { maxHeight, overflowY: 'auto' } : undefined}
+    >
       {rows.map((row, i) => (
         <li
           key={row[0] + i}

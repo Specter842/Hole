@@ -122,7 +122,7 @@ export default function DashboardPage({ data }) {
             </div>
             <div className="text-xs" style={{ color: C.textMute }}>postings, across every named country</div>
           </div>
-          <RankedList rows={postings_by_country} />
+          <RankedList rows={postings_by_country} maxHeight={340} />
         </Panel>
       </div>
 
