@@ -113,6 +113,8 @@ class App:
                 return 200, pages.review(conn, self.token)
             if parts == ["runs"]:
                 return 200, pages.runs(conn)
+            if parts == ["competitions"]:
+                return 200, pages.competitions_page(conn, self.token)
             return _page("Not found", f"No page at {path}", 404)
         finally:
             conn.close()
@@ -143,6 +145,12 @@ class App:
                 answers.remove(conn, int(parts[1]))
                 conn.commit()
                 return 303, "/answers"
+            if parts == ["competitions", "add"]:
+                return self._add_competition(conn, fields)
+            if len(parts) == 3 and parts[0] == "competitions" and parts[1].isdigit() and parts[2] == "delete":
+                db.delete_row(conn, "competitions", int(parts[1]))
+                conn.commit()
+                return 303, "/competitions"
             if parts == ["profile", "save"]:
                 return self._save_profile(conn, fields)
             if len(parts) == 3 and parts[0] == "profile" and parts[2] == "add":
@@ -185,6 +193,26 @@ class App:
         except ValueError as exc:
             return _page("Not stored", str(exc), 400)
         return 303, "/answers"
+
+    def _add_competition(self, conn: sqlite3.Connection, fields: dict[str, str]) -> tuple[int, str]:
+        name = (fields.get("name") or "").strip()
+        category = (fields.get("category") or "").strip()
+        valid_categories = {v for v, _label in pages.COMPETITION_CATEGORIES}
+        if not name:
+            return _page("Not added", "A competition needs a name.", 400)
+        if category not in valid_categories:
+            return _page("Not added", f"Unknown category '{category}'.", 400)
+        db.insert_row(conn, "competitions", {
+            "name": name,
+            "category": category,
+            "result": (fields.get("result") or "").strip() or None,
+            "period": (fields.get("period") or "").strip() or None,
+            "description": (fields.get("description") or "").strip() or None,
+            "tech": (fields.get("tech") or "").strip() or None,
+            "url": (fields.get("url") or "").strip() or None,
+        })
+        conn.commit()
+        return 303, "/competitions"
 
     # Which tables the builder page may write, and the delete confirmation each
     # needs. An allow-list, not a passthrough: the entity name arrives in the

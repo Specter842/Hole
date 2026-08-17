@@ -10,6 +10,7 @@ import ProfilePage from './ProfilePage.jsx'
 import ReviewPage from './ReviewPage.jsx'
 import RunsPage from './RunsPage.jsx'
 import AnswersPage from './AnswersPage.jsx'
+import CompetitionsPage from './CompetitionsPage.jsx'
 import ProfileEditPage from './ProfileEditPage.jsx'
 import ProfileBuildPage from './ProfileBuildPage.jsx'
 import './index.css'
@@ -44,6 +45,7 @@ const PAGE_META = {
   review: { title: 'Review', subtitle: 'Rows a model extracted, awaiting confirmation' },
   runs: { title: 'Runs', subtitle: 'One row per pipeline run' },
   answers: { title: 'Answers', subtitle: 'What forms fill from, and what is still missing' },
+  competitions: { title: 'Competitions', subtitle: 'Hackathons, case competitions, finance competitions' },
 }
 
 // A page-specific title/subtitle overrides the route default -- e.g. a job
@@ -69,6 +71,7 @@ const PAGE_COMPONENTS = {
   review: ReviewPage,
   runs: RunsPage,
   answers: AnswersPage,
+  competitions: CompetitionsPage,
 }
 
 function App() {

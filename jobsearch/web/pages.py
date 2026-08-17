@@ -509,6 +509,45 @@ def runs(conn: sqlite3.Connection) -> str:
     return _react_page("Runs", "runs", data)
 
 
+# --------------------------------------------------------------------------- competitions
+
+COMPETITION_CATEGORIES = (
+    ("hackathon", "Hackathon"),
+    ("case_competition", "Case Competition"),
+    ("finance_competition", "Finance Competition"),
+    ("other", "Other"),
+)
+
+
+def competitions_page(conn: sqlite3.Connection, token: str) -> str:
+    """Hackathons, case competitions, finance competitions -- kept here as they
+    happen, newest first. Every field is exactly what was typed in; nothing
+    on this page is generated."""
+    rows = db.rows_to_dicts(
+        conn.execute("SELECT * FROM competitions ORDER BY id DESC").fetchall()
+    )
+    data = {
+        "nav": _nav_counts(conn),
+        "page": "competitions",
+        "token": token,
+        "categories": [{"value": v, "label": lbl} for v, lbl in COMPETITION_CATEGORIES],
+        "competitions": [
+            {
+                "id": r["id"],
+                "name": r.get("name"),
+                "category": r.get("category"),
+                "result": r.get("result"),
+                "period": r.get("period"),
+                "description": r.get("description"),
+                "tech": r.get("tech"),
+                "url": r.get("url"),
+            }
+            for r in rows
+        ],
+    }
+    return _react_page("Competitions", "competitions", data)
+
+
 # --------------------------------------------------------------------------- answers
 
 # The questions almost every application form asks. Offered as prompts with the

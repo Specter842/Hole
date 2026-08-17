@@ -1,7 +1,7 @@
 import React from 'react'
 import {
   Home, Briefcase, ListChecks, UserRound, Globe, Filter, History, FileText,
-  Search, Download, Info, Settings,
+  Trophy, Search, Download, Info, Settings,
 } from 'lucide-react'
 import { C } from './tokens.js'
 import { Dropdown, useToast } from './components.jsx'
@@ -18,6 +18,7 @@ const NAV_RESOURCES = [
   { href: '/profile', label: 'Profile', icon: UserRound },
   { href: '/runs', label: 'Runs', icon: History },
   { href: '/answers', label: 'Answers', icon: FileText },
+  { href: '/competitions', label: 'Competitions', icon: Trophy },
 ]
 
 export default function NavShell({ route, title, subtitle, nav = {}, children }) {

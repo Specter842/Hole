@@ -204,6 +204,22 @@ CREATE TABLE IF NOT EXISTS skill_evidence (
 
 -- ------------------------------------------------------------------ the long tail
 
+-- Hackathons, case competitions, finance competitions. Kept separate from
+-- `awards` because a competition entry does not always mean a win --
+-- `result` is free text ("Winner", "Finalist", "Participant", or blank while
+-- pending) rather than an implicit "this was an award."
+CREATE TABLE IF NOT EXISTS competitions (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,           -- hackathon / case_competition / finance_competition / other
+    result TEXT,
+    period TEXT,
+    description TEXT,
+    tech TEXT,                        -- comma-separated, free text
+    url TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS awards (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
