@@ -44,7 +44,7 @@ export function MoreDots() {
 export function MetricCard({ label, value, delta }) {
   return (
     <div
-      className="rounded-xl p-5"
+      className="dash-card rounded-xl p-5"
       style={{ background: C.panel, border: `1px solid ${C.border}` }}
     >
       <div className="flex items-start justify-between">

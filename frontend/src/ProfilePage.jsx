@@ -10,8 +10,6 @@ export default function ProfilePage({ data }) {
 
   return (
     <>
-      <p className="text-sm mb-6" style={{ color: C.textSub }}>The graph every resume is drawn from.</p>
-
       {empty && <NoticeBlock tone="warn" text="The graph is empty. Import a LinkedIn export or a resume first." />}
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
