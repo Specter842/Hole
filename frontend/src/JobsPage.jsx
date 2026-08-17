@@ -10,21 +10,57 @@ import { Panel, Empty, StatusPill, ScoreBar, DataTable, KV, ActionButton } from 
 function StatusFilters({ status, statuses }) {
   const all = [null, ...statuses]
   return (
-    <div className="flex flex-wrap gap-2 mb-6">
-      {all.map((s) => (
-        <a
-          key={s || 'all'}
-          href={s ? `/jobs?status=${s}` : '/jobs'}
-          className="text-xs font-medium uppercase tracking-wide px-3 py-1.5 rounded-lg focus-ring"
-          style={{
-            background: (status || null) === s ? C.panelAlt : 'transparent',
-            border: `1px solid ${C.border}`,
-            color: (status || null) === s ? C.text : C.textSub,
-          }}
+    <div
+      className="inline-flex items-center gap-1 p-1 rounded-lg mb-6"
+      style={{ background: C.panel, border: `1px solid ${C.border}` }}
+    >
+      {all.map((s) => {
+        const active = (status || null) === s
+        return (
+          <a
+            key={s || 'all'}
+            href={s ? `/jobs?status=${s}` : '/jobs'}
+            className={`text-xs font-medium uppercase tracking-wide px-3 py-1.5 rounded-md focus-ring transition-colors ${active ? '' : 'filter-pill-inactive'}`}
+            style={{
+              background: active ? C.panelAlt : 'transparent',
+              color: active ? C.text : C.textSub,
+            }}
+          >
+            {s || 'all'}
+          </a>
+        )
+      })}
+    </div>
+  )
+}
+
+const PAGE_SIZE = 50
+
+function Pagination({ page, pageCount, onChange }) {
+  if (pageCount <= 1) return null
+  return (
+    <div className="flex items-center justify-between mt-4 text-xs" style={{ color: C.textSub }}>
+      <span>Page {page} of {pageCount}</span>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          className="page-btn focus-ring px-3 py-1.5 rounded-md font-medium transition-colors"
+          style={{ color: C.textSub }}
+          disabled={page <= 1}
+          onClick={() => onChange(page - 1)}
         >
-          {s || 'all'}
-        </a>
-      ))}
+          Previous
+        </button>
+        <button
+          type="button"
+          className="page-btn focus-ring px-3 py-1.5 rounded-md font-medium transition-colors"
+          style={{ color: C.textSub }}
+          disabled={page >= pageCount}
+          onClick={() => onChange(page + 1)}
+        >
+          Next
+        </button>
+      </div>
     </div>
   )
 }
@@ -32,11 +68,17 @@ function StatusFilters({ status, statuses }) {
 function JobsListPage({ data }) {
   const { jobs, status, statuses } = data
   const [filterText, setFilterText] = React.useState('')
+  const [page, setPage] = React.useState(1)
   const filtered = jobs.filter((j) => {
     if (!filterText) return true
     const q = filterText.toLowerCase()
     return [j.title, j.company, j.location].some((v) => (v || '').toLowerCase().includes(q))
   })
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount)
+  const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  React.useEffect(() => { setPage(1) }, [filterText, status])
 
   return (
     <>
@@ -88,8 +130,9 @@ function JobsListPage({ data }) {
             { key: 'status', label: 'Status', render: (j) => <StatusPill label={j.status} tone={j.tone} /> },
             { key: 'source', label: 'Source' },
           ]}
-          rows={filtered}
+          rows={pageRows}
         />
+        <Pagination page={safePage} pageCount={pageCount} onChange={setPage} />
       </Panel>
     </>
   )

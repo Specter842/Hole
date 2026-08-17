@@ -66,7 +66,7 @@ export function MetricCard({ label, value, delta }) {
 export function Panel({ title, children, className = '', menu = true, variant = 'label' }) {
   return (
     <div
-      className={`rounded-xl p-5 ${className}`}
+      className={`dash-card rounded-xl p-5 ${className}`}
       style={{ background: C.panel, border: `1px solid ${C.border}` }}
     >
       {title && (
@@ -156,11 +156,11 @@ export function DataTable({ columns, rows, empty = 'Nothing here yet.', rowKey }
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={rowKey ? rowKey(row) : i}>
+            <tr key={rowKey ? rowKey(row) : i} className="data-row">
               {columns.map((col) => (
                 <td
                   key={col.key}
-                  className="py-3 pr-4 align-top"
+                  className="py-3.5 pr-4 align-top"
                   style={{ borderBottom: `1px solid ${C.border}`, color: C.textSub }}
                 >
                   {col.render ? col.render(row) : row[col.key]}
