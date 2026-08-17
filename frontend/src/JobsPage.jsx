@@ -1,6 +1,6 @@
 import React from 'react'
 import { C } from './tokens.js'
-import { Panel, Empty, StatusPill, ScoreBar, DataTable, KV, ActionButton } from './components.jsx'
+import { Panel, Empty, StatusPill, ScoreBar, DataTable, KV, ActionButton, BackLink } from './components.jsx'
 
 // Ported from jobsearch/web/pages.py's jobs_list()/job_detail() -- same
 // query results, restyled into the dark/orange/teal card language. Both
@@ -164,6 +164,7 @@ function JobDetailPage({ data }) {
   const { job, applications, token } = data
   return (
     <>
+      <BackLink href="/jobs" label="Back to Jobs" />
       <div className="flex gap-3 mb-6 text-sm">
         {job.url && (
           <a href={job.url} target="_blank" rel="noreferrer noopener" style={{ color: C.teal }}>
