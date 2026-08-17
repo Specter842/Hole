@@ -2,10 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* These two pages (Reach, Funnel) are served as standalone documents -- React
-   owns the whole page, including its own left-nav shell, the way the
-   reference estics-reach-dashboard.jsx does. Every other page in the app
-   keeps the original server-rendered header.bar chrome untouched. */
+/* Every page in this app is a standalone React document -- server-rendered
+   HTML only supplies the mount point and the page's data as JSON, per
+   jobsearch/web/pages.py's _react_page(). */
 html, body {
   margin: 0;
   background: #0A0A0B;
@@ -30,7 +29,12 @@ html, body {
 .dropdown-item:hover { background: rgba(255,255,255,0.06) !important; }
 .dash-card { transition: all 0.2s; }
 .dash-card:hover { background: #1a1a1d !important; border-color: rgba(255,255,255,0.16) !important; }
+.data-row { transition: background-color 0.12s; }
+.data-row:hover { background: rgba(255,255,255,0.025); }
 .focus-ring:focus-visible { outline: 2px solid #8AD3D8; outline-offset: 2px; }
+.page-btn:hover:not(:disabled) { background: rgba(255,255,255,0.06) !important; color: #ffffff !important; }
+.page-btn:disabled { opacity: 0.35; cursor: default; }
+.filter-pill-inactive:hover { background: rgba(255,255,255,0.04) !important; color: #ffffff !important; }
 
 /* Scroll gutter: invisible until hovered, and inset from the content so the
    thumb never sits on top of the last column's numbers. */
