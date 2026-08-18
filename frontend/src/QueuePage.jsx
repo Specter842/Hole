@@ -8,7 +8,6 @@ function QueueListPage({ data }) {
   const { applications } = data
   return (
     <>
-      <p className="text-sm mb-6" style={{ color: C.textSub }}>Everything drafted, approved, or sent.</p>
       <Panel menu={false}>
         <DataTable
           empty="Nothing drafted yet."

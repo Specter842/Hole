@@ -20,7 +20,7 @@ export default function CompetitionsPage({ data }) {
   return (
     <>
       <p className="text-sm mb-8 max-w-2xl" style={{ color: C.textSub }}>
-        Hackathons, case competitions, and finance competitions -- entered here as they happen.
+        Entered here as they happen -- no placeholder data, just what actually got added.
       </p>
 
       <Panel title="Add a competition" className="mb-6">

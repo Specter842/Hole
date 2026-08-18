@@ -82,7 +82,6 @@ function JobsListPage({ data }) {
 
   return (
     <>
-      <p className="text-sm mb-6" style={{ color: C.textSub }}>Sourced postings, best fit first.</p>
       <StatusFilters status={status} statuses={statuses} />
       <div className="flex items-center gap-4 mb-4">
         <input
