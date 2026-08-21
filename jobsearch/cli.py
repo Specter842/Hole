@@ -1136,6 +1136,45 @@ def cmd_web(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_competitions(args: argparse.Namespace) -> int:
+    """Find open competitions worth entering, and list what is already tracked."""
+    from .sourcing import competitions as comp
+
+    with db.session(args.db) as conn:
+        if args.competitions_action == "discover":
+            found, errors = comp.discover(
+                limit=args.limit,
+                online_only=args.online_only,
+                include_manual=not args.no_bookmarks,
+            )
+            for message in errors:
+                _out(f"  skipped {message}")
+            if not found:
+                _out("Nothing found. Every source was unreachable.")
+                return 1
+            added, skipped = comp.save(conn, found)
+            _out(f"Found {len(found)}; added {added}, already tracked {skipped}.")
+            if added:
+                _out("  python -m jobsearch competitions list")
+            return 0
+
+        rows = conn.execute(
+            "SELECT name, category, deadline, status, tracks FROM competitions "
+            "ORDER BY (deadline IS NULL), deadline, id DESC"
+        ).fetchall()
+        if not rows:
+            _out("Nothing tracked yet.")
+            _out("  python -m jobsearch competitions discover")
+            return 0
+        for r in rows:
+            marker = "open" if r["status"] == "discovered" else "  - "
+            deadline = f"  due {r['deadline']}" if r["deadline"] else ""
+            _out(f"{marker} {r['name']}{deadline}")
+            if r["tracks"]:
+                _out(f"       tracks: {r['tracks']}")
+        return 0
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     config = _load_config(args)
     if config is None:
@@ -1664,6 +1703,23 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("config", parents=[common, config_opt],
                        help="show the effective pipeline settings and any problems")
     p.set_defaults(func=cmd_config)
+
+    p = sub.add_parser("competitions", parents=[common],
+                       help="find and track hackathons and case competitions")
+    csub = p.add_subparsers(dest="competitions_action")
+    d = csub.add_parser("discover", parents=[common],
+                        help="search public sources for open competitions")
+    d.add_argument("--limit", type=int, default=100,
+                   help="stop after this many (default 100)")
+    d.add_argument("--online-only", action="store_true",
+                   help="skip anything that requires being somewhere in person")
+    d.add_argument("--no-bookmarks", action="store_true",
+                   help="omit rows for platforms that cannot be read automatically")
+    d.set_defaults(func=cmd_competitions, competitions_action="discover")
+    listp = csub.add_parser("list", parents=[common], help="show what is tracked, soonest deadline first")
+    listp.set_defaults(func=cmd_competitions, competitions_action="list")
+    p.set_defaults(func=cmd_competitions, competitions_action="list",
+                   limit=100, online_only=False, no_bookmarks=False)
 
     p = sub.add_parser(
         "run",

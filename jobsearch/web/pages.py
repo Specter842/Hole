@@ -520,9 +520,12 @@ COMPETITION_CATEGORIES = (
 
 
 def competitions_page(conn: sqlite3.Connection, token: str) -> str:
-    """Hackathons, case competitions, finance competitions -- kept here as they
-    happen, newest first. Every field is exactly what was typed in; nothing
-    on this page is generated."""
+    """Hackathons, case competitions, finance competitions, newest first.
+
+    Two kinds of row share this table. A hand-entered one records something
+    already done and carries `result`. One found by `sourcing.competitions`
+    records something still open and carries `deadline`/`tracks`/`apply_url`
+    instead -- `status` is what separates them."""
     rows = db.rows_to_dicts(
         conn.execute("SELECT * FROM competitions ORDER BY id DESC").fetchall()
     )
@@ -541,6 +544,12 @@ def competitions_page(conn: sqlite3.Connection, token: str) -> str:
                 "description": r.get("description"),
                 "tech": r.get("tech"),
                 "url": r.get("url"),
+                "deadline": r.get("deadline"),
+                "team_size": r.get("team_size"),
+                "tracks": r.get("tracks"),
+                "apply_url": r.get("apply_url"),
+                "status": r.get("status") or "entered",
+                "discovery_source": r.get("discovery_source"),
             }
             for r in rows
         ],

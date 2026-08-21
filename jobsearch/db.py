@@ -89,6 +89,15 @@ def connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connection
 # IF NOT EXISTS will not add them to a database that already exists, so they get
 # ALTERed in. Additive only -- nothing here ever drops or rewrites data.
 ADDITIVE_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "competitions": [
+        ("deadline", "TEXT"),
+        ("team_size", "TEXT"),
+        ("tracks", "TEXT"),
+        ("apply_url", "TEXT"),
+        ("discovered_at", "TEXT"),
+        ("discovery_source", "TEXT"),
+        ("status", "TEXT NOT NULL DEFAULT 'entered'"),
+    ],
     "applications": [
         ("job_id", "INTEGER"),
         ("channel", "TEXT"),

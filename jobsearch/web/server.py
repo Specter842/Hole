@@ -210,6 +210,10 @@ class App:
             "description": (fields.get("description") or "").strip() or None,
             "tech": (fields.get("tech") or "").strip() or None,
             "url": (fields.get("url") or "").strip() or None,
+            "deadline": (fields.get("deadline") or "").strip() or None,
+            "team_size": (fields.get("team_size") or "").strip() or None,
+            "tracks": (fields.get("tracks") or "").strip() or None,
+            "apply_url": (fields.get("apply_url") or "").strip() or None,
         })
         conn.commit()
         return 303, "/competitions"

@@ -23,7 +23,7 @@ confirmed rows.
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # --------------------------------------------------------------------------- provenance
 
@@ -217,6 +217,17 @@ CREATE TABLE IF NOT EXISTS competitions (
     description TEXT,
     tech TEXT,                        -- comma-separated, free text
     url TEXT,
+    -- Everything below is for opportunities DISCOVERED but not yet entered.
+    -- An entry the candidate typed in after the fact leaves these blank; one
+    -- found by `competitions discover` fills them so the decision to enter can
+    -- be made from the row itself.
+    deadline TEXT,                    -- ISO date where known, else free text
+    team_size TEXT,                   -- free text: "2-4", "solo or team", ...
+    tracks TEXT,                      -- comma-separated themes announced by the organizer
+    apply_url TEXT,                   -- where registration actually happens
+    discovered_at TEXT,               -- set only by the scraper; NULL if hand-entered
+    discovery_source TEXT,            -- which connector found it
+    status TEXT NOT NULL DEFAULT 'entered',  -- discovered / shortlisted / entered / dismissed
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
