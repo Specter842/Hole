@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from . import answers, db, generate, graph, matching, policy, render, retrieval, sourcing, verify
+from .sourcing import competitions as competitions_sourcing
 from .config import Config
 from .dispatch import DispatchResult, ats_form, email_gmail, find_apply_email
 
@@ -30,6 +31,7 @@ class RunReport:
     mode: str = "review-only"
     sourced: int = 0
     duplicates: int = 0
+    competitions_found: int = 0
     scored: int = 0
     screened_out: int = 0
     tailored: int = 0
@@ -117,6 +119,22 @@ def source_jobs(conn: sqlite3.Connection, config: Config, report: RunReport) -> 
     for error in result.errors:
         report.fail(error)
     report.note(f"Sourced {new} new posting(s), {duplicates} already seen.")
+
+
+def source_competitions(conn: sqlite3.Connection, report: RunReport) -> None:
+    """The other thing worth going and looking for, same shape as source_jobs.
+
+    Failure here is exactly as local as a dead job board: one unreachable
+    connector does not stop the run, it just finds fewer competitions this
+    time.
+    """
+    found, errors = competitions_sourcing.discover(include_manual=False)
+    added, _skipped = competitions_sourcing.save(conn, found)
+    report.competitions_found = added
+    for error in errors:
+        report.note(f"  competitions: {error}")
+    if added:
+        report.note(f"Found {added} new competition(s).")
 
 
 def score_jobs(conn: sqlite3.Connection, g: graph.ProfileGraph, report: RunReport) -> None:
@@ -378,6 +396,7 @@ def run(
 
     if not skip_sourcing:
         source_jobs(conn, config, report)
+        source_competitions(conn, report)
     score_jobs(conn, g, report)
 
     context = policy.PolicyContext.load(conn)

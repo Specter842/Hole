@@ -1291,8 +1291,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     _out("")
     _out(RULE)
     _out(
-        f"sourced {report.sourced} ({report.duplicates} dup) | scored {report.scored} | "
-        f"screened out {report.screened_out} | tailored {report.tailored} | "
+        f"sourced {report.sourced} ({report.duplicates} dup) | competitions {report.competitions_found} | "
+        f"scored {report.scored} | screened out {report.screened_out} | tailored {report.tailored} | "
         f"queued {report.queued} | sent {report.sent} | errors {len(report.errors)}"
     )
     _out(RULE)
