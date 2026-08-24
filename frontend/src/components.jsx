@@ -9,8 +9,8 @@ export function BackLink({ href, label }) {
   return (
     <a
       href={href}
-      className="link-teal focus-ring inline-flex items-center gap-1.5 text-xs font-medium mb-6"
-      style={{ color: C.teal }}
+      className="link-lime focus-ring inline-flex items-center gap-1.5 text-xs font-medium mb-6"
+      style={{ color: C.lime }}
     >
       <ArrowLeft size={14} /> {label}
     </a>
@@ -39,8 +39,8 @@ export function DeltaChip({ delta }) {
     <span
       className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md"
       style={{
-        color: positive ? '#34D399' : C.red,
-        background: positive ? 'rgba(52,211,153,.12)' : 'rgba(239,90,90,.12)',
+        color: positive ? C.lime : C.red,
+        background: positive ? C.limeDim : 'rgba(255,90,90,.14)',
       }}
     >
       {positive ? '↑' : '↓'} {Math.abs(delta).toFixed(2)}%
@@ -56,20 +56,42 @@ export function MoreDots() {
   )
 }
 
-export function MetricCard({ label, value, delta }) {
+// Icon badge colors cycle through the chart palette so a row of stat cards
+// reads as a set the way the reference's does, rather than every icon
+// competing for the same accent.
+const BADGE_TONES = [
+  { bg: C.limeDim, fg: C.lime },
+  { bg: C.purpleDim, fg: C.purple },
+  { bg: 'rgba(61,224,214,.14)', fg: C.teal },
+  { bg: 'rgba(255,210,61,.14)', fg: C.yellow },
+  { bg: 'rgba(255,110,199,.14)', fg: C.pink },
+]
+
+export function MetricCard({ label, value, delta, icon: Icon, tone = 0 }) {
+  const badge = BADGE_TONES[tone % BADGE_TONES.length]
   return (
     <div
-      className="dash-card rounded-xl p-5"
+      className="dash-card rounded-2xl p-5"
       style={{ background: C.panel, border: `1px solid ${C.border}` }}
     >
       <div className="flex items-start justify-between">
-        <div className="text-2xl font-bold tracking-tight" style={{ color: C.text }}>
-          {value}
-        </div>
+        {Icon ? (
+          <span
+            className="h-9 w-9 rounded-xl flex items-center justify-center"
+            style={{ background: badge.bg, color: badge.fg }}
+          >
+            <Icon size={17} strokeWidth={2.25} />
+          </span>
+        ) : (
+          <span />
+        )}
         <MoreDots />
       </div>
-      <div className="mt-1.5 flex items-center gap-2">
-        <span className="text-xs uppercase tracking-wide" style={{ color: C.textMute }}>
+      <div className="mt-3 text-2xl font-bold tracking-tight" style={{ color: C.text }}>
+        {value}
+      </div>
+      <div className="mt-1 flex items-center gap-2">
+        <span className="text-xs" style={{ color: C.textMute }}>
           {label}
         </span>
         <DeltaChip delta={delta} />
@@ -81,7 +103,7 @@ export function MetricCard({ label, value, delta }) {
 export function Panel({ title, children, className = '', menu = true, variant = 'label' }) {
   return (
     <div
-      className={`dash-card rounded-xl p-5 ${className}`}
+      className={`dash-card rounded-2xl p-5 ${className}`}
       style={{ background: C.panel, border: `1px solid ${C.border}` }}
     >
       {title && (
@@ -113,12 +135,13 @@ export function Empty({ children = 'Nothing here yet.' }) {
 }
 
 // Same tone vocabulary as DashboardPage's TONE_COLOR / STATUS_TONE in
-// jobsearch/web/pages.py -- "bad"/"warn" share this palette's one red,
-// "good" maps to teal, anything else is a neutral pill.
+// jobsearch/web/pages.py. Three distinct colors on purpose: lime is the
+// primary accent everywhere else on the page, so reusing it for "warn" would
+// make a caution pill read as an active/positive one.
 const TONE_COLOR = {
   bad: C.red,
-  warn: C.orange,
-  good: C.teal,
+  warn: C.yellow,
+  good: C.lime,
   '': C.textSub,
 }
 
@@ -143,7 +166,7 @@ export function ScoreBar({ score }) {
     <div className="flex items-center gap-2">
       <span className="text-xs font-mono tabular-nums" style={{ color: C.textSub }}>{pct.toFixed(1)}</span>
       <span className="inline-block h-[3px] w-24 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,.1)' }}>
-        <span className="block h-full" style={{ width: `${pct}%`, background: C.teal }} />
+        <span className="block h-full" style={{ width: `${pct}%`, background: C.lime }} />
       </span>
     </div>
   )
@@ -291,7 +314,7 @@ export function PostForm({ action, token, children, submitLabel = 'Save', inline
         <button
           type="submit"
           className="text-xs font-semibold uppercase tracking-wide px-4 py-2.5 rounded-lg focus-ring"
-          style={{ background: C.orange, color: '#1a0d05' }}
+          style={{ background: C.lime, color: C.onLime }}
         >
           {submitLabel}
         </button>
@@ -324,7 +347,7 @@ export function ActionButton({ action, token, label, confirm = '', primary = fal
       <button
         type="submit"
         className="text-xs font-semibold uppercase tracking-wide px-4 py-2.5 rounded-lg focus-ring"
-        style={primary ? { background: C.orange, color: '#1a0d05' } : { color: C.text, border: `1px solid ${C.border}` }}
+        style={primary ? { background: C.lime, color: C.onLime } : { color: C.text, border: `1px solid ${C.border}` }}
       >
         {label}
       </button>
@@ -381,7 +404,7 @@ export function Dropdown({ label, options }) {
               type="button"
               onClick={() => { setSelected(o); setOpen(false) }}
               className="dropdown-item block w-full text-left px-3 py-2 text-xs"
-              style={{ color: o === selected ? C.teal : C.textSub }}
+              style={{ color: o === selected ? C.lime : C.textSub }}
             >
               {o}
             </button>
@@ -430,7 +453,7 @@ export function MoreMenu() {
 export function Card({ children, padded = true, className = '', style = {} }) {
   return (
     <div
-      className={`dash-card rounded-xl overflow-hidden ${padded ? 'p-5' : ''} ${className}`}
+      className={`dash-card rounded-2xl overflow-hidden ${padded ? 'p-5' : ''} ${className}`}
       style={{ background: C.panel, border: `1px solid ${C.border}`, ...style }}
     >
       {children}

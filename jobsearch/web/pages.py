@@ -209,12 +209,16 @@ def dashboard(conn: sqlite3.Connection, config: Config) -> str:
 
 
 def jobs_list(conn: sqlite3.Connection, *, status: str | None = None) -> str:
+    # No LIMIT here -- JobsPage.jsx paginates client-side at 50/page and computes
+    # its page count from however many rows arrive, so capping this at a fixed
+    # number (it used to say 400, sized for a handful of fixture postings) just
+    # means real jobs past that point silently never show up in the list.
     sql = "SELECT * FROM jobs"
     params: list[Any] = []
     if status:
         sql += " WHERE status = ?"
         params.append(status)
-    sql += " ORDER BY (fit_score IS NULL), fit_score DESC, id DESC LIMIT 400"
+    sql += " ORDER BY (fit_score IS NULL), fit_score DESC, id DESC"
     rows = db.rows_to_dicts(conn.execute(sql, params).fetchall())
 
     data = {

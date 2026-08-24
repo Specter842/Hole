@@ -1,9 +1,18 @@
 import React from 'react'
+import { Briefcase, Award, FolderGit2, GraduationCap, Sparkles } from 'lucide-react'
 import { C } from './tokens.js'
 import { Panel, Empty, StatusPill, DataTable, NoticeBlock, MetricCard } from './components.jsx'
 
 // Ported from jobsearch/web/pages.py's profile() -- the graph every resume
 // is drawn from, read-only.
+
+const COUNT_ICON = {
+  experiences: Briefcase,
+  achievements: Award,
+  projects: FolderGit2,
+  education: GraduationCap,
+  skills: Sparkles,
+}
 
 export default function ProfilePage({ data }) {
   const { empty, counts, positions, projects, skills, unevidenced } = data
@@ -13,8 +22,8 @@ export default function ProfilePage({ data }) {
       {empty && <NoticeBlock tone="warn" text="The graph is empty. Import a LinkedIn export or a resume first." />}
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        {['experiences', 'achievements', 'projects', 'education', 'skills'].map((key) => (
-          <MetricCard key={key} label={key} value={counts[key] || 0} />
+        {['experiences', 'achievements', 'projects', 'education', 'skills'].map((key, i) => (
+          <MetricCard key={key} label={key} value={counts[key] || 0} icon={COUNT_ICON[key]} tone={i} />
         ))}
       </div>
 

@@ -1,17 +1,29 @@
 import React from 'react'
+import { Briefcase, Award, Sparkles, Search, Clock, Send } from 'lucide-react'
 import { C } from './tokens.js'
 import { MetricCard, Panel, Empty } from './components.jsx'
 import RankedList from './RankedList.jsx'
 import { WorldMap, SourceBars, DiscoveredVsSent, RemoteDonut, FitHeatmap } from './ReachPage.jsx'
 
 // Same tone vocabulary the server-rendered pages use (STATUS_TONE / notice()
-// in jobsearch/web/pages.py, html.py) -- "bad"/"warn" map to the one red this
-// palette has, "good" to teal, anything else to a neutral grey pill.
+// in jobsearch/web/pages.py, html.py). Lime is this palette's one "good"
+// color and it is already the primary accent everywhere else, so warn gets
+// yellow instead of sharing it -- a caution pill should not look active.
 const TONE_COLOR = {
   bad: C.red,
-  warn: C.orange,
-  good: C.teal,
+  warn: C.yellow,
+  good: C.lime,
   '': C.textSub,
+}
+
+// pages.py's dashboard() emits exactly these six labels, in this order.
+const STAT_ICON = {
+  'positions': Briefcase,
+  'accomplishments': Award,
+  'skills with evidence': Sparkles,
+  'jobs sourced': Search,
+  'awaiting review': Clock,
+  'sent': Send,
 }
 
 // The config-problem/autonomous-mode notices the old server-rendered
@@ -106,8 +118,8 @@ export default function DashboardPage({ data }) {
       <NoticeBanner notices={notices} />
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-        {stats.map((m) => (
-          <MetricCard key={m.label} label={m.label} value={m.value} />
+        {stats.map((m, i) => (
+          <MetricCard key={m.label} label={m.label} value={m.value} icon={STAT_ICON[m.label]} tone={i} />
         ))}
       </div>
 

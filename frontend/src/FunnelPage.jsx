@@ -1,7 +1,17 @@
 import React from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts'
+import { Search, Gauge, FileEdit, CheckCircle2, Send } from 'lucide-react'
 import { C } from './tokens.js'
 import { MetricCard, Panel, Empty } from './components.jsx'
+
+// pages.py's _funnel() emits exactly these five stages, in this order.
+const STAGE_ICON = {
+  sourced: Search,
+  scored: Gauge,
+  tailored: FileEdit,
+  approved: CheckCircle2,
+  sent: Send,
+}
 
 const tooltipStyle = {
   background: C.panelAlt,
@@ -30,7 +40,7 @@ function ColumnChart({ rows, color = C.teal }) {
 function FunnelBars({ rows }) {
   if (!rows || !rows.length) return <Empty />
   const data = rows.map(([label, n]) => ({ label, n }))
-  const colors = [C.teal, C.teal, C.orange, C.orange, C.orange]
+  const colors = C.chart
   return (
     <ResponsiveContainer width="100%" height={rows.length * 46 + 20}>
       <BarChart data={data} layout="vertical" margin={{ left: 8, right: 24 }}>
@@ -54,12 +64,12 @@ function SplitBar({ evidenced, unevidenced }) {
   return (
     <div>
       <div className="h-6 rounded-md overflow-hidden flex" style={{ background: 'rgba(255,255,255,.06)' }}>
-        {evidenced > 0 && <div style={{ width: `${pct}%`, background: C.teal }} />}
+        {evidenced > 0 && <div style={{ width: `${pct}%`, background: C.lime }} />}
         {unevidenced > 0 && <div style={{ width: `${100 - pct}%`, background: C.red }} />}
       </div>
       <div className="flex gap-6 mt-3 text-xs" style={{ color: C.textSub }}>
         <span className="flex items-center gap-1.5">
-          <i className="inline-block w-2 h-2 rounded-sm" style={{ background: C.teal }} />
+          <i className="inline-block w-2 h-2 rounded-sm" style={{ background: C.lime }} />
           evidenced <b style={{ color: C.text }}>{evidenced}</b>
         </span>
         <span className="flex items-center gap-1.5">
@@ -77,14 +87,20 @@ export default function FunnelPage({ data }) {
   return (
     <>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        {stages.map(([label, value]) => (
-          <MetricCard key={label} label={label} value={Math.round(value).toLocaleString()} />
+        {stages.map(([label, value], i) => (
+          <MetricCard
+            key={label}
+            label={label}
+            value={Math.round(value).toLocaleString()}
+            icon={STAGE_ICON[label]}
+            tone={i}
+          />
         ))}
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6 mb-6">
         <Panel title="Fit score distribution" variant="header">
-          <ColumnChart rows={fit_histogram} color={C.orange} />
+          <ColumnChart rows={fit_histogram} color={C.lime} />
         </Panel>
         <Panel title="Postings reaching each stage" variant="header">
           <FunnelBars rows={stages} />
@@ -96,7 +112,7 @@ export default function FunnelPage({ data }) {
           <SplitBar evidenced={evidenced} unevidenced={unevidenced} />
         </Panel>
         <Panel title="Most-evidenced skills" variant="header">
-          <ColumnChart rows={top_skills} color={C.teal} />
+          <ColumnChart rows={top_skills} color={C.purple} />
         </Panel>
       </div>
     </>

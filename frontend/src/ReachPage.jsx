@@ -255,7 +255,7 @@ export default function ReachPage({ data }) {
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl font-bold">{m.value}</span>
-                <span className="font-medium" style={{ fontSize: '13px', color: positive ? C.teal : C.red }}>
+                <span className="font-medium" style={{ fontSize: '13px', color: positive ? C.lime : C.red }}>
                   {changeStr}
                 </span>
               </div>
@@ -279,7 +279,7 @@ export default function ReachPage({ data }) {
           <div className="w-72 flex-shrink-0 rounded-lg p-4" style={{ background: C.panelAlt }}>
             <div className="text-3xl font-bold">{Math.round(totalPostings).toLocaleString()}</div>
             <div className="text-xs mb-4" style={{ color: C.textSub }}>
-              Active postings <span style={{ color: C.teal }}>+0.00%</span>
+              Active postings <span style={{ color: C.lime }}>+0.00%</span>
             </div>
             <div className="h-px mb-4" style={{ background: C.border }} />
             <div className="space-y-3">

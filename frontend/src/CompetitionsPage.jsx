@@ -23,8 +23,8 @@ function deadlineTone(deadline) {
   const days = Math.ceil((when - Date.now()) / 86400000)
   if (days < 0) return { color: C.textMute, label: `${deadline} -- closed` }
   if (days <= 7) return { color: C.red, label: `${deadline} -- ${days}d left` }
-  if (days <= 21) return { color: C.orange, label: `${deadline} -- ${days}d left` }
-  return { color: C.teal, label: deadline }
+  if (days <= 21) return { color: C.yellow, label: `${deadline} -- ${days}d left` }
+  return { color: C.lime, label: deadline }
 }
 
 function Tracks({ tracks }) {
