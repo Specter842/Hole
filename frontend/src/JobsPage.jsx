@@ -3,7 +3,7 @@ import { C } from './tokens.js'
 import { Panel, Empty, StatusPill, ScoreBar, DataTable, KV, ActionButton, BackLink } from './components.jsx'
 
 // Ported from jobsearch/web/pages.py's jobs_list()/job_detail() -- same
-// query results, restyled into the dark/orange/teal card language. Both
+// query results, restyled into the dark/lime/purple card language. Both
 // views share `data.page` to pick between them (main.jsx), and both keep
 // the `/jobs` nav item active.
 
@@ -11,7 +11,7 @@ function StatusFilters({ status, statuses }) {
   const all = [null, ...statuses]
   return (
     <div
-      className="inline-flex items-center gap-1 p-1 rounded-lg mb-6"
+      className="inline-flex items-center gap-1 p-1 rounded-full mb-6"
       style={{ background: C.panel, border: `1px solid ${C.border}` }}
     >
       {all.map((s) => {
@@ -20,10 +20,10 @@ function StatusFilters({ status, statuses }) {
           <a
             key={s || 'all'}
             href={s ? `/jobs?status=${s}` : '/jobs'}
-            className={`text-xs font-medium uppercase tracking-wide px-3 py-1.5 rounded-md focus-ring transition-colors ${active ? '' : 'filter-pill-inactive'}`}
+            className={`text-xs font-medium uppercase tracking-wide px-3 py-1.5 rounded-full focus-ring transition-colors ${active ? '' : 'filter-pill-inactive'}`}
             style={{
-              background: active ? C.panelAlt : 'transparent',
-              color: active ? C.text : C.textSub,
+              background: active ? C.lime : 'transparent',
+              color: active ? C.onLime : C.textSub,
             }}
           >
             {s || 'all'}
