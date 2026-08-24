@@ -37,6 +37,7 @@ from .config import CONFIG_NAME, EXAMPLE_NAME, Config, ConfigError
 from .dispatch import email_gmail, find_apply_email
 from .dispatch import linkedin as linkedin_draft
 from .ingest import documents as ingest_documents
+from .ingest import github as ingest_github
 from .ingest import linkedin as ingest_linkedin
 
 BAR_WIDTH = 24
@@ -267,7 +268,9 @@ def cmd_import(args: argparse.Namespace) -> int:
         return _import_document(args)
     if args.import_action == "inbox":
         return _import_inbox(args)
-    _err("Choose: import linkedin | import document | import inbox")
+    if args.import_action == "github":
+        return _import_github(args)
+    _err("Choose: import linkedin | import document | import inbox | import github")
     return 1
 
 
@@ -293,6 +296,26 @@ def _import_linkedin(args: argparse.Namespace) -> int:
         _out("LinkedIn does not record where a skill was used, so those skills arrived with")
         _out("no supporting record and cannot reach a resume yet. Link them:")
         _out("  python -m jobsearch link")
+    return 0
+
+
+def _import_github(args: argparse.Namespace) -> int:
+    with db.session(args.db) as conn:
+        try:
+            report = ingest_github.import_profile(
+                conn, args.username, include_forks=args.include_forks
+            )
+        except ValueError as exc:
+            _err(str(exc))
+            return 1
+    _out(f"Imported {report.username}'s public repos (source {report.source_id})")
+    _report_counts(report.created)
+    if report.skipped_forks:
+        _out("")
+        _out(f"  skipped {len(report.skipped_forks)} fork(s): {', '.join(report.skipped_forks[:8])}")
+        if len(report.skipped_forks) > 8:
+            _out(f"  ... and {len(report.skipped_forks) - 8} more")
+        _out("  (a fork proves you ran it, not that you built it -- use --include-forks to import anyway)")
     return 0
 
 
@@ -1591,6 +1614,11 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--model", default=generate.DEFAULT_MODEL,
                    help="override the model (default: the configured provider's own)")
     q.add_argument("--trust", action="store_true")
+    q = isub.add_parser("github", parents=[common],
+                        help="public repos as projects, language as skill evidence")
+    q.add_argument("username")
+    q.add_argument("--include-forks", action="store_true",
+                   help="import forked repos too (skipped by default)")
     p.set_defaults(func=cmd_import)
 
     p = sub.add_parser("link", parents=[common], help="attach skills to records that name them")
