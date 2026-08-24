@@ -79,10 +79,38 @@ max_age_days = 30
 # Public job-board endpoints. Greenhouse, Lever, and Ashby need no key: one
 # request per company board. Add the companies you actually want to work at.
 
+# A starting set of company boards, each one probed against the live API before
+# being listed -- a token that 404s or returns nothing is silent failure, so
+# none are included on faith. Counts are from 2026-08-24 and will drift; they
+# are here only to show which boards carry weight. Trim this to the companies
+# you would actually work for: more boards is more postings to score, not more
+# postings worth applying to.
 [sources.greenhouse]
 enabled = true
 # The token is the last path segment of boards.greenhouse.io/<token>
-boards = ["stripe", "figma", "anthropic"]
+boards = [
+    "databricks",   # 821
+    "stripe",       # 579
+    "anthropic",    # 516
+    "datadog",      # 450
+    "mongodb",      # 405
+    "cloudflare",   # 310
+    "brex",         # 294
+    "elastic",      # 249
+    "scaleai",      # 208
+    "gitlab",       # 203
+    "airbnb",       # 189
+    "coinbase",     # 173
+    "figma",        # 162
+    "reddit",       # 151
+    "twilio",       # 145
+    "robinhood",    # 130
+    "asana",        # 126
+    "vercel",       #  83
+    "proton",       #  76
+    "discord",      #  51
+    "turing",       #  23
+]
 
 [sources.lever]
 enabled = false
@@ -90,9 +118,21 @@ enabled = false
 companies = ["netflix"]
 
 [sources.ashby]
-enabled = false
+enabled = true
 # The name in jobs.ashbyhq.com/<name>
-boards = ["ramp"]
+boards = [
+    "openai",       # 753
+    "snowflake",    # 392
+    "ramp",         # 136
+    "notion",       # 128
+    "plaid",        # 104
+    "docker",       #  59
+    "confluent",    #  30
+    "andela",       #  17
+    "zapier",       #   8
+    "quora",        #   6
+    "buffer",       #   3
+]
 
 # ---------------------------------------------------------- remote job boards
 #
@@ -119,11 +159,11 @@ enabled = true
 limit = 50
 
 [sources.jobicy]
-enabled = false
+enabled = true
 limit = 50
 
 [sources.workingnomads]
-enabled = false
+enabled = true
 limit = 100
 
 # General German job board; only a small fraction of it is remote.
