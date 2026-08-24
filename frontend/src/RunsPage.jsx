@@ -9,7 +9,7 @@ export default function RunsPage({ data }) {
   return (
     <>
       <p className="text-sm mb-6" style={{ color: C.textSub }}>
-        One row per pipeline run, for auditing an unattended night.
+        For auditing an unattended night.
       </p>
       <Panel menu={false}>
         <DataTable

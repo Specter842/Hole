@@ -1,6 +1,6 @@
 import React from 'react'
 import { C } from './tokens.js'
-import { Panel, Empty, StatusPill, ScoreBar, DataTable, KV, ActionButton, NoticeBlock } from './components.jsx'
+import { Panel, Empty, StatusPill, ScoreBar, DataTable, KV, ActionButton, NoticeBlock, BackLink } from './components.jsx'
 
 // Ported from jobsearch/web/pages.py's queue()/application_detail().
 
@@ -8,7 +8,6 @@ function QueueListPage({ data }) {
   const { applications } = data
   return (
     <>
-      <p className="text-sm mb-6" style={{ color: C.textSub }}>Everything drafted, approved, or sent.</p>
       <Panel menu={false}>
         <DataTable
           empty="Nothing drafted yet."
@@ -38,6 +37,7 @@ function ApplicationDetailPage({ data }) {
   const status = (a.status || '').toLowerCase()
   return (
     <>
+      <BackLink href="/queue" label="Back to Queue" />
       <Panel menu={false}>
         <KV
           items={[

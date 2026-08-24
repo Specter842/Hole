@@ -1,6 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { ChevronDown, MoreHorizontal } from 'lucide-react'
+import { ChevronDown, MoreHorizontal, ArrowLeft } from 'lucide-react'
 import { C } from './tokens.js'
+
+// A detail page reached by clicking into a list (job, application) has no
+// other affordance back to it -- this app navigates with real page loads,
+// not client-side routing, so there's no breadcrumb trail to lean on.
+export function BackLink({ href, label }) {
+  return (
+    <a
+      href={href}
+      className="link-teal focus-ring inline-flex items-center gap-1.5 text-xs font-medium mb-6"
+      style={{ color: C.teal }}
+    >
+      <ArrowLeft size={14} /> {label}
+    </a>
+  )
+}
 
 export function PageHeader({ title, subtitle }) {
   return (
@@ -44,7 +59,7 @@ export function MoreDots() {
 export function MetricCard({ label, value, delta }) {
   return (
     <div
-      className="rounded-xl p-5"
+      className="dash-card rounded-xl p-5"
       style={{ background: C.panel, border: `1px solid ${C.border}` }}
     >
       <div className="flex items-start justify-between">
