@@ -460,3 +460,123 @@ export function Card({ children, padded = true, className = '', style = {} }) {
     </div>
   )
 }
+
+// A tinted hero panel for one prominent call to action -- the reference uses
+// this for its "Productivity Hub" and "AI Assistance" cards. `tone` picks
+// which accent the gradient leans on; everything here links somewhere real,
+// never a dead button standing in for a feature that does not exist yet.
+export function GradientPanel({ eyebrow, title, action, href, tone = 'lime', children }) {
+  const from = tone === 'purple' ? C.purple : C.lime
+  const fg = tone === 'purple' ? '#FFFFFF' : C.onLime
+  return (
+    <div
+      className="dash-card rounded-2xl p-5 flex flex-col justify-between h-full"
+      style={{
+        background: `linear-gradient(135deg, ${from}26 0%, ${C.panel} 65%)`,
+        border: `1px solid ${C.border}`,
+        color: fg === '#FFFFFF' ? C.text : C.text,
+      }}
+    >
+      <div>
+        {eyebrow && (
+          <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: from }}>
+            {eyebrow}
+          </div>
+        )}
+        {title && <div className="text-base font-semibold leading-snug mb-1">{title}</div>}
+        {children}
+      </div>
+      {action && href && (
+        <a
+          href={href}
+          className="focus-ring inline-flex items-center gap-1.5 self-start mt-4 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors"
+          style={{ background: from, color: fg }}
+        >
+          {action}
+        </a>
+      )}
+    </div>
+  )
+}
+
+// Donut + centered total + a legend that doubles as the color key -- the
+// reference's "Team Capacity" / "Monthly Project report" pattern. Takes
+// pre-computed [label, value, color][] so callers own their own palette
+// choice (usually C.chart) rather than this component guessing one.
+export function DonutLegend({ segments, centerLabel, centerValue }) {
+  const total = segments.reduce((s, seg) => s + (seg[1] || 0), 0)
+  let cumulative = 0
+  const R = 42
+  const CIRC = 2 * Math.PI * R
+  return (
+    <div className="flex items-center gap-5">
+      <svg width="112" height="112" viewBox="0 0 112 112" className="flex-shrink-0 -rotate-90">
+        <circle cx="56" cy="56" r={R} fill="none" stroke={C.panelAlt} strokeWidth="12" />
+        {total > 0 && segments.map(([label, value, color], i) => {
+          if (!value) return null
+          const frac = value / total
+          const dash = frac * CIRC
+          const gap = CIRC - dash
+          const offset = -cumulative * CIRC
+          cumulative += frac
+          return (
+            <circle
+              key={label + i}
+              cx="56" cy="56" r={R} fill="none"
+              stroke={color} strokeWidth="12"
+              strokeDasharray={`${dash} ${gap}`}
+              strokeDashoffset={offset}
+              strokeLinecap="butt"
+            />
+          )
+        })}
+      </svg>
+      <div className="flex-1 min-w-0">
+        {centerValue !== undefined && (
+          <div className="mb-2">
+            <div className="text-2xl font-bold" style={{ color: C.text }}>{centerValue}</div>
+            {centerLabel && <div className="text-[11px]" style={{ color: C.textMute }}>{centerLabel}</div>}
+          </div>
+        )}
+        <div className="flex flex-col gap-1.5">
+          {segments.filter(([, v]) => v > 0).map(([label, value, color]) => (
+            <div key={label} className="flex items-center gap-2 text-xs">
+              <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: color }} />
+              <span className="truncate" style={{ color: C.textSub }}>{label}</span>
+              <span className="ml-auto font-mono tabular-nums" style={{ color: C.text }}>{value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// One row of the reference's "Continue Learning" / "Task Timeline" list --
+// a title, a subtitle, and a fit-score-as-progress bar standing in for
+// "% complete" since that's the real number this app has for a queued item.
+export function ProgressListItem({ href, title, subtitle, pct, badge }) {
+  const p = Math.max(0, Math.min(100, pct || 0))
+  return (
+    <a
+      href={href}
+      className="link-lime focus-ring flex items-center gap-3 py-2.5 group"
+      style={{ borderBottom: `1px solid ${C.border}` }}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium truncate transition-colors" style={{ color: C.text }}>
+          {title}
+        </div>
+        {subtitle && (
+          <div className="text-xs truncate mt-0.5" style={{ color: C.textMute }}>{subtitle}</div>
+        )}
+        <div className="h-1.5 rounded-full mt-2 overflow-hidden" style={{ background: 'rgba(255,255,255,.08)' }}>
+          <div className="h-full rounded-full" style={{ width: `${p}%`, background: C.lime }} />
+        </div>
+      </div>
+      {badge !== undefined && (
+        <span className="text-xs font-semibold flex-shrink-0" style={{ color: C.lime }}>{badge}</span>
+      )}
+    </a>
+  )
+}

@@ -165,6 +165,12 @@ def dashboard(conn: sqlite3.Connection, config: Config) -> str:
     ]
     sent_vs_discovered = _sent_vs_discovered(conn)
 
+    drafted = sorted(
+        (a for a in db.list_applications(conn) if a.get("status") == "drafted"),
+        key=lambda a: a.get("fit_score") or 0,
+        reverse=True,
+    )[:5]
+
     data = {
         "nav": _nav_counts(conn),
         "notices": _config_notices(config),
@@ -201,6 +207,15 @@ def dashboard(conn: sqlite3.Connection, config: Config) -> str:
         "remote": remote,
         "onsite": onsite,
         "fit_by_source": {"rows": src_rows, "cols": band_cols, "grid": fit_grid},
+        "recent_queue": [
+            {
+                "id": a["id"],
+                "role": a.get("role"),
+                "company": a.get("company"),
+                "fit_score": a.get("fit_score"),
+            }
+            for a in drafted
+        ],
     }
     return _react_page("Dashboard", "", data)
 
