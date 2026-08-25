@@ -580,3 +580,72 @@ export function ProgressListItem({ href, title, subtitle, pct, badge }) {
     </a>
   )
 }
+
+// A colored initial circle -- the leading badge every row in the reference's
+// tables carries (its Team page: a photo; here, since there are no uploaded
+// photos, an initial on a hashed color reads the same way at a glance).
+const AVATAR_COLORS = [C.lime, C.purple, C.teal, C.yellow, C.pink]
+function hashColor(seed) {
+  let h = 0
+  for (let i = 0; i < (seed || '').length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]
+}
+
+export function Avatar({ name, size = 34 }) {
+  const initial = (name || '?').trim().charAt(0).toUpperCase() || '?'
+  const bg = hashColor(name || '')
+  const dark = bg === C.lime || bg === C.yellow || bg === C.teal
+  return (
+    <span
+      className="rounded-full flex items-center justify-center flex-shrink-0 font-bold"
+      style={{
+        width: size, height: size, fontSize: size * 0.4,
+        background: `${bg}26`, color: bg,
+      }}
+    >
+      {initial}
+    </span>
+  )
+}
+
+// The leading cell of a roster-style row -- avatar, a primary line, and a
+// muted secondary line underneath it. Matches the reference's Team table
+// (name + role stacked next to a photo) and Task Timeline (name + fraction).
+export function RowIdentity({ name, meta, sub }) {
+  return (
+    <div className="flex items-center gap-3 min-w-0">
+      <Avatar name={name} />
+      <div className="min-w-0">
+        <div className="text-sm font-medium truncate" style={{ color: C.text }}>{name}</div>
+        {(meta || sub) && (
+          <div className="text-xs truncate mt-0.5" style={{ color: C.textMute }}>
+            {meta}{meta && sub ? ' · ' : ''}{sub}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// A small round icon-only action button -- the reference's row-trailing
+// action cluster (edit/message/delete as colored circular icon buttons)
+// rather than a text link or a bordered rectangular button.
+export function RowAction({ href, onClick, icon: Icon, label, tone = 'neutral' }) {
+  const style = tone === 'lime'
+    ? { background: C.limeDim, color: C.lime }
+    : { background: 'rgba(255,255,255,.05)', color: C.textSub }
+  const Tag = href ? 'a' : 'button'
+  return (
+    <Tag
+      href={href}
+      type={href ? undefined : 'button'}
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="icon-btn focus-ring h-8 w-8 rounded-full flex items-center justify-center transition-colors flex-shrink-0"
+      style={style}
+    >
+      <Icon size={14} />
+    </Tag>
+  )
+}

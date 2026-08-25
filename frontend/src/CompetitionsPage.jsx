@@ -1,6 +1,6 @@
 import React from 'react'
 import { C } from './tokens.js'
-import { Panel, PostForm, TextField, TextAreaField, DeleteButton, Empty } from './components.jsx'
+import { Panel, PostForm, TextField, TextAreaField, DeleteButton, Empty, Avatar } from './components.jsx'
 
 // Ported from jobsearch/web/pages.py's competitions_page(). Two kinds of row
 // share this table and this page keeps them apart: things already done (typed
@@ -53,6 +53,8 @@ function Entry({ c, token }) {
       className="flex items-start justify-between gap-4 pb-4"
       style={{ borderBottom: `1px solid ${C.border}` }}
     >
+      <div className="min-w-0 flex gap-3">
+      <Avatar name={c.name} />
       <div className="min-w-0">
         <div className="flex items-center flex-wrap gap-2">
           <span className="text-sm font-semibold" style={{ color: C.text }}>{c.name}</span>
@@ -62,7 +64,7 @@ function Entry({ c, token }) {
           >
             {CATEGORY_LABEL[c.category] || c.category}
           </span>
-          {c.result && <span className="text-xs" style={{ color: C.orange }}>{c.result}</span>}
+          {c.result && <span className="text-xs" style={{ color: C.lime }}>{c.result}</span>}
         </div>
 
         {due && (
@@ -115,6 +117,7 @@ function Entry({ c, token }) {
             </span>
           )}
         </div>
+      </div>
       </div>
 
       <DeleteButton

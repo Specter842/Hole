@@ -1,6 +1,7 @@
 import React from 'react'
+import { ArrowUpRight } from 'lucide-react'
 import { C } from './tokens.js'
-import { Panel, Empty, StatusPill, ScoreBar, DataTable, KV, ActionButton, NoticeBlock, BackLink } from './components.jsx'
+import { Panel, Empty, StatusPill, ScoreBar, DataTable, KV, ActionButton, NoticeBlock, BackLink, RowIdentity, RowAction } from './components.jsx'
 
 // Ported from jobsearch/web/pages.py's queue()/application_detail().
 
@@ -13,9 +14,15 @@ function QueueListPage({ data }) {
           empty="Nothing drafted yet."
           rowKey={(a) => a.id}
           columns={[
-            { key: 'id', label: 'ID', render: (a) => <a href={`/applications/${a.id}`} style={{ color: C.teal }}>#{a.id}</a> },
-            { key: 'role', label: 'Role' },
-            { key: 'company', label: 'Company' },
+            {
+              key: 'role',
+              label: 'Application',
+              render: (a) => (
+                <a href={`/applications/${a.id}`} className="block">
+                  <RowIdentity name={a.role} meta={a.company} sub={`#${a.id}`} />
+                </a>
+              ),
+            },
             { key: 'fit', label: 'Fit', render: (a) => <ScoreBar score={a.fit_score} /> },
             {
               key: 'grounding',
@@ -24,6 +31,11 @@ function QueueListPage({ data }) {
             },
             { key: 'status', label: 'Status', render: (a) => <StatusPill label={a.status} tone={a.tone} /> },
             { key: 'channel', label: 'Channel' },
+            {
+              key: 'action',
+              label: '',
+              render: (a) => <RowAction href={`/applications/${a.id}`} icon={ArrowUpRight} label={`Open application #${a.id}`} />,
+            },
           ]}
           rows={applications}
         />

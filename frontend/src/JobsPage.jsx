@@ -1,6 +1,7 @@
 import React from 'react'
+import { ArrowUpRight } from 'lucide-react'
 import { C } from './tokens.js'
-import { Panel, Empty, StatusPill, ScoreBar, DataTable, KV, ActionButton, BackLink } from './components.jsx'
+import { Panel, Empty, StatusPill, ScoreBar, DataTable, KV, ActionButton, BackLink, RowIdentity, RowAction } from './components.jsx'
 
 // Ported from jobsearch/web/pages.py's jobs_list()/job_detail() -- same
 // query results, restyled into the dark/lime/purple card language. Both
@@ -101,33 +102,35 @@ function JobsListPage({ data }) {
           empty="No jobs sourced yet. Run the pipeline, or add sources to config.toml."
           rowKey={(j) => j.id}
           columns={[
-            { key: 'fit', label: 'Fit', render: (j) => <ScoreBar score={j.fit_score} /> },
             {
               key: 'role',
               label: 'Role',
               render: (j) => (
-                <>
-                  <a href={`/jobs/${j.id}`} style={{ color: C.text, borderBottom: `1px solid ${C.border}` }}>
-                    {j.title}
-                  </a>
+                <a href={`/jobs/${j.id}`} className="block">
+                  <RowIdentity
+                    name={j.title}
+                    meta={j.company}
+                    sub={j.location}
+                  />
                   {j.skip_reason && (
-                    <div className="text-xs mt-1" style={{ color: C.textMute }}>{j.skip_reason}</div>
+                    <div className="text-xs mt-1 ml-[46px]" style={{ color: C.textMute }}>{j.skip_reason}</div>
                   )}
-                </>
+                </a>
               ),
             },
-            { key: 'company', label: 'Company' },
+            { key: 'fit', label: 'Fit', render: (j) => <ScoreBar score={j.fit_score} /> },
             {
-              key: 'location',
-              label: 'Location',
-              render: (j) => (
-                <>
-                  {j.location} {j.remote && <StatusPill label="remote" tone="good" />}
-                </>
-              ),
+              key: 'remote',
+              label: 'Remote',
+              render: (j) => (j.remote ? <StatusPill label="remote" tone="good" /> : null),
             },
             { key: 'status', label: 'Status', render: (j) => <StatusPill label={j.status} tone={j.tone} /> },
             { key: 'source', label: 'Source' },
+            {
+              key: 'action',
+              label: '',
+              render: (j) => <RowAction href={`/jobs/${j.id}`} icon={ArrowUpRight} label={`Open ${j.title}`} />,
+            },
           ]}
           rows={pageRows}
         />
@@ -144,14 +147,26 @@ function ApplicationsMini({ applications }) {
       <DataTable
         rowKey={(a) => a.id}
         columns={[
-          { key: 'id', label: 'ID', render: (a) => <a href={`/applications/${a.id}`} style={{ color: C.teal }}>#{a.id}</a> },
+          {
+            key: 'id',
+            label: 'Application',
+            render: (a) => (
+              <a href={`/applications/${a.id}`} className="block">
+                <RowIdentity name={`#${a.id}`} sub={a.date} />
+              </a>
+            ),
+          },
           { key: 'status', label: 'Status', render: (a) => <StatusPill label={a.status} tone={a.tone} /> },
           {
             key: 'grounding',
             label: 'Grounding',
             render: (a) => <StatusPill label={a.grounding_status} tone={a.grounding_clean ? 'good' : 'warn'} />,
           },
-          { key: 'date', label: 'Created' },
+          {
+            key: 'action',
+            label: '',
+            render: (a) => <RowAction href={`/applications/${a.id}`} icon={ArrowUpRight} label={`Open application #${a.id}`} />,
+          },
         ]}
         rows={applications}
       />
