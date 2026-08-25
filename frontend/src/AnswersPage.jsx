@@ -27,7 +27,7 @@ export default function AnswersPage({ data }) {
             {gaps.map((gap, i) => (
               <div key={i} className="pb-5" style={{ borderBottom: i < gaps.length - 1 ? `1px solid ${C.border}` : 'none' }}>
                 <div className="text-sm mb-3" style={{ color: C.text }}>
-                  <b style={{ color: C.orange }}>{gap.seen_count}&times;</b> {gap.question}
+                  <b style={{ color: C.lime }}>{gap.seen_count}&times;</b> {gap.question}
                   {gap.company && <span style={{ color: C.textMute }}> &middot; {gap.company}</span>}
                 </div>
                 <PostForm action="/answers/add" token={token} submitLabel="Answer it">

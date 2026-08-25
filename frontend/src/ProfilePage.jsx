@@ -1,7 +1,7 @@
 import React from 'react'
 import { Briefcase, Award, FolderGit2, GraduationCap, Sparkles } from 'lucide-react'
 import { C } from './tokens.js'
-import { Panel, Empty, StatusPill, DataTable, NoticeBlock, MetricCard } from './components.jsx'
+import { Panel, Empty, StatusPill, DataTable, NoticeBlock, MetricCard, Avatar, RowIdentity } from './components.jsx'
 
 // Ported from jobsearch/web/pages.py's profile() -- the graph every resume
 // is drawn from, read-only.
@@ -31,24 +31,27 @@ export default function ProfilePage({ data }) {
         <Panel title="Positions" className="mb-6">
           <div className="flex flex-col gap-6">
             {positions.map((p, i) => (
-              <div key={i} className="pb-5" style={{ borderBottom: i < positions.length - 1 ? `1px solid ${C.border}` : 'none' }}>
-                <div className="text-base font-semibold" style={{ color: C.text }}>{p.label}</div>
-                <div className="text-xs font-mono mt-0.5" style={{ color: C.textMute }}>{p.dates}</div>
-                {p.achievements.length ? (
-                  <ul className="mt-3 flex flex-col gap-2">
-                    {p.achievements.map((a, j) => (
-                      <li key={j} className="text-sm flex items-start gap-2" style={{ color: C.textSub }}>
-                        <span>
-                          {a.text}
-                          {a.impact && <span className="ml-2 text-xs" style={{ color: C.textMute }}>({a.impact})</span>}
-                        </span>
-                        {!a.verified && <StatusPill label="unconfirmed" tone="warn" />}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="text-sm mt-2" style={{ color: C.textMute }}>No accomplishments recorded.</div>
-                )}
+              <div key={i} className="pb-5 flex gap-3" style={{ borderBottom: i < positions.length - 1 ? `1px solid ${C.border}` : 'none' }}>
+                <Avatar name={p.label} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-base font-semibold" style={{ color: C.text }}>{p.label}</div>
+                  <div className="text-xs font-mono mt-0.5" style={{ color: C.textMute }}>{p.dates}</div>
+                  {p.achievements.length ? (
+                    <ul className="mt-3 flex flex-col gap-2">
+                      {p.achievements.map((a, j) => (
+                        <li key={j} className="text-sm flex items-start gap-2" style={{ color: C.textSub }}>
+                          <span>
+                            {a.text}
+                            {a.impact && <span className="ml-2 text-xs" style={{ color: C.textMute }}>({a.impact})</span>}
+                          </span>
+                          {!a.verified && <StatusPill label="unconfirmed" tone="warn" />}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="text-sm mt-2" style={{ color: C.textMute }}>No accomplishments recorded.</div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -59,9 +62,12 @@ export default function ProfilePage({ data }) {
         <Panel title="Projects" className="mb-6">
           <div className="flex flex-col gap-4">
             {projects.map((p, i) => (
-              <div key={i}>
-                <div className="text-base font-semibold" style={{ color: C.text }}>{p.name}</div>
-                <div className="text-sm mt-0.5" style={{ color: C.textMute }}>{p.description}</div>
+              <div key={i} className="flex gap-3">
+                <Avatar name={p.name} />
+                <div className="min-w-0">
+                  <div className="text-base font-semibold" style={{ color: C.text }}>{p.name}</div>
+                  <div className="text-sm mt-0.5" style={{ color: C.textMute }}>{p.description}</div>
+                </div>
               </div>
             ))}
           </div>
@@ -73,7 +79,7 @@ export default function ProfilePage({ data }) {
           empty="No skills recorded."
           rowKey={(s, i) => s.name + i}
           columns={[
-            { key: 'skill', label: 'Skill', render: (s) => s.name },
+            { key: 'skill', label: 'Skill', render: (s) => <RowIdentity name={s.name} /> },
             {
               key: 'evidence',
               label: 'Evidence',

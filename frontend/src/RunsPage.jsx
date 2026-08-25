@@ -1,8 +1,29 @@
 import React from 'react'
+import { History } from 'lucide-react'
 import { C } from './tokens.js'
 import { Panel, StatusPill, DataTable } from './components.jsx'
 
 // Ported from jobsearch/web/pages.py's runs() -- one row per pipeline run.
+
+const MODE_TONE = { autonomous: C.lime, 'review-only': C.purple, 'dry-run': C.textMute }
+
+function RunIdentity({ run }) {
+  const tone = MODE_TONE[run.mode] || C.textMute
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className="h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0"
+        style={{ background: `${tone}26`, color: tone }}
+      >
+        <History size={14} />
+      </span>
+      <div className="min-w-0">
+        <div className="text-sm font-medium" style={{ color: C.text }}>#{run.id} &middot; {run.mode}</div>
+        <div className="text-xs mt-0.5 font-mono truncate" style={{ color: C.textMute }}>{run.started_at}</div>
+      </div>
+    </div>
+  )
+}
 
 export default function RunsPage({ data }) {
   const { runs } = data
@@ -16,9 +37,7 @@ export default function RunsPage({ data }) {
           empty="No runs recorded yet."
           rowKey={(r) => r.id}
           columns={[
-            { key: 'id', label: 'ID', render: (r) => <span className="font-mono text-xs">{r.id}</span> },
-            { key: 'mode', label: 'Mode', render: (r) => <StatusPill label={r.mode} /> },
-            { key: 'started', label: 'Started', render: (r) => r.started_at },
+            { key: 'run', label: 'Run', render: (r) => <RunIdentity run={r} /> },
             {
               key: 'finished',
               label: 'Finished',
