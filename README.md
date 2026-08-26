@@ -188,6 +188,33 @@ rather than warned about. Three things guard it:
 Sending is deliberately *not* wired to a button. Approving marks the row; the pipeline
 sends. One irreversible action, one place it can happen.
 
+## MCP server
+
+A third front end, alongside the CLI and the web UI, for driving this from a Claude
+conversation instead of a terminal or a browser:
+
+```bash
+pip install mcp
+claude mcp add hole -- python -m jobsearch mcp --db /path/to/jobsearch.db
+```
+
+Restart Claude Code, then ask it things like "find me remote backend jobs" or "approve
+the top 3 in my queue." Eleven tools cover search, adding a posting you found yourself
+(a referral, a link someone sent you — not everything comes from a connector),
+tailoring, the review queue, the profile graph, and competitions.
+
+Every tool calls the same functions the CLI and web UI already call — `pipeline.tailor_one`
+is the exact code the web UI's "Tailor for this posting" button runs, not a
+reimplementation. There is no hosted backend behind this: it runs as a local subprocess
+over stdio, reads and writes the same SQLite file everything else does, and nothing
+about your job search leaves your machine because of it. That is the whole point of
+building this instead of pointing an MCP client at a third-party job-application
+service — your resume and your applications stay exactly as local as they were before.
+
+Sending is still gated the same way: tools can approve a drafted application, never send
+one. Whether an approved application actually goes out still depends only on
+`autonomous` in `config.toml`, same as every other interface.
+
 ## The grounding check
 
 Every generated draft is scanned before you see it:
@@ -255,7 +282,7 @@ Pass `--db` *after* the final subcommand, or set `JOBSEARCH_DB`.
 python -m unittest discover -s tests -v
 ```
 
-270 tests. No API key, no network — connectors run against captured response shapes, and
+382 tests. No API key, no network — connectors run against captured response shapes, and
 both model SDKs are replaced with fakes so the failure modes that matter (safety blocks,
 a thinking budget eating the token ceiling, blocked prompts) are exercised without
 spending a call.
@@ -276,6 +303,7 @@ jobsearch/
   render.py        markdown -> print HTML -> PDF
   cli.py           argparse front end
   web/             local review UI: loopback-only http.server, no dependencies
+  mcp/             MCP server (stdio) -- tools call the same functions the other two do
   config.py        config.toml loading and validation
   policy.py        the two autonomy gates: screen, and decide_dispatch
   pipeline.py      the unattended run, end to end

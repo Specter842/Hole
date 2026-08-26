@@ -1117,6 +1117,20 @@ def cmd_answers(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mcp(args: argparse.Namespace) -> int:
+    """Launch the MCP server over stdio. No output here is for a human --
+    stdout is the protocol channel, so anything printed would corrupt it.
+    The tools resolve their own db path via $JOBSEARCH_DB / the project
+    default, same as every other interface; --db just sets that variable
+    for them since MCPServer.run() takes no db argument of its own.
+    """
+    if getattr(args, "db", None):
+        os.environ["JOBSEARCH_DB"] = str(db.resolve_db_path(args.db))
+    from .mcp.server import mcp
+    mcp.run()
+    return 0
+
+
 def cmd_web(args: argparse.Namespace) -> int:
     from .web import serve
     from .web.server import WebError
@@ -1808,6 +1822,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="0.0.0.0 to accept outside connections. Needs JOBSEARCH_PASSWORD set.")
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
     p.set_defaults(func=cmd_web)
+
+    p = sub.add_parser("mcp", parents=[common],
+                       help="run as an MCP server (stdio) for Claude Code / Claude Desktop")
+    p.set_defaults(func=cmd_mcp)
 
     p = sub.add_parser("outreach", parents=[common, config_opt],
                        help="cold email and LinkedIn message drafts")

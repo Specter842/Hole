@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
-from .. import answers, db, generate, graph as graph_module, pipeline, retrieval, verify
+from .. import answers, db, pipeline
 from ..config import Config
 from . import assets, pages
 from .html import esc, layout
@@ -390,73 +390,16 @@ class App:
 
     def _tailor(self, conn: sqlite3.Connection, job_id: int) -> tuple[int, str]:
         """Generate documents for one posting. Costs one model call, so it is
-        serialised -- a double-clicked button must not become two calls."""
-        job = db.get_row(conn, "jobs", job_id)
-        if not job:
-            return _page("No such job", f"Job {job_id} is not in the database.", 404)
-
+        serialised -- a double-clicked button must not become two calls.
+        The actual work is pipeline.tailor_one(), shared with the MCP
+        server's tailor_job tool so there is exactly one place this logic
+        lives."""
         with self._lock:
-            existing = conn.execute(
-                "SELECT id FROM applications WHERE job_id = ?", (job_id,)
-            ).fetchone()
-            if existing:
-                return 303, f"/applications/{existing['id']}"
-
             config = self._fresh_config()
             try:
-                g = graph_module.ProfileGraph.load(conn)
-                description = pipeline._job_description(job)
-                plan = retrieval.build_plan(
-                    g,
-                    description,
-                    company=job.get("company"),
-                    role=job.get("title"),
-                    verified_only=config.dispatch.require_verified_records,
-                )
-                result = generate.generate(
-                    description, plan, model=config.llm.model or None,
-                    max_tokens=config.llm.max_tokens,
-                )
-            except Exception as exc:
-                return _page("Tailoring failed", f"{type(exc).__name__}: {exc}", 500)
-
-            findings = verify.verify_plan(
-                {"resume": result.resume, "cover_letter": result.cover_letter},
-                plan.to_facts(),
-                target_company=job.get("company"),
-            )
-            out_dir = db.PROJECT_ROOT / "output" / pipeline._slug(
-                job.get("company"), job.get("title"), job_id
-            )
-            pipeline.write_bundle(
-                out_dir,
-                result=result,
-                job_description=description,
-                plan=plan,
-                meta={
-                    "job_id": job_id,
-                    "source": job.get("source"),
-                    "url": job.get("url"),
-                    "fit_score": job.get("fit_score"),
-                    "created_via": "web",
-                },
-            )
-            app_id = db.insert_application(
-                conn,
-                {
-                    "job_id": job_id,
-                    "company": job.get("company"),
-                    "role": job.get("title"),
-                    "source": job.get("source"),
-                    "job_url": job.get("url"),
-                    "resume_version": str(out_dir),
-                    "status": "drafted",
-                    "fit_score": job.get("fit_score"),
-                    "grounding_status": "flagged" if findings else "clean",
-                },
-            )
-            db.update_row(conn, "jobs", job_id, {"status": "tailored"})
-            conn.commit()
+                app_id = pipeline.tailor_one(conn, config, job_id)
+            except pipeline.TailorError as exc:
+                return _page("Tailoring failed", str(exc), 404 if "not in the database" in str(exc) else 500)
         return 303, f"/applications/{app_id}"
 
 

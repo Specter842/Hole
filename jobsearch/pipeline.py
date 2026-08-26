@@ -236,6 +236,86 @@ def _dispatch(
     return DispatchResult(False, "none", "no dispatch channel available for this posting")
 
 
+class TailorError(RuntimeError):
+    """Could not produce an application for this job. Message is user-facing."""
+
+
+def tailor_one(conn: sqlite3.Connection, config: Config, job_id: int) -> int:
+    """Tailor a single posting on demand, outside a full pipeline run.
+
+    Shared by the web UI's "Tailor for this posting" button and the MCP
+    server's `tailor_job` tool -- one job, one model call, one drafted
+    application. Returns the application id. If one already exists for this
+    job, returns that id instead of generating a duplicate.
+    """
+    job = db.get_row(conn, "jobs", job_id)
+    if not job:
+        raise TailorError(f"job {job_id} is not in the database")
+
+    existing = conn.execute(
+        "SELECT id FROM applications WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    if existing:
+        return int(existing["id"])
+
+    g = graph.ProfileGraph.load(conn)
+    description = _job_description(job)
+    plan = retrieval.build_plan(
+        g,
+        description,
+        company=job.get("company"),
+        role=job.get("title"),
+        verified_only=config.dispatch.require_verified_records,
+    )
+    try:
+        result = generate.generate(
+            description, plan, model=config.llm.model or None,
+            max_tokens=config.llm.max_tokens,
+        )
+    except Exception as exc:
+        # Broad on purpose, matching the handler this replaced: a missing
+        # API key, a network error, a provider outage -- whatever the model
+        # call throws becomes a reported failure, never an unhandled crash.
+        raise TailorError(f"{type(exc).__name__}: {exc}") from exc
+
+    findings = verify.verify_plan(
+        {"resume": result.resume, "cover_letter": result.cover_letter},
+        plan.to_facts(),
+        target_company=job.get("company"),
+    )
+    out_dir = db.PROJECT_ROOT / "output" / _slug(job.get("company"), job.get("title"), job_id)
+    write_bundle(
+        out_dir,
+        result=result,
+        job_description=description,
+        plan=plan,
+        meta={
+            "job_id": job_id,
+            "source": job.get("source"),
+            "url": job.get("url"),
+            "fit_score": job.get("fit_score"),
+            "created_via": "on-demand",
+        },
+    )
+    app_id = db.insert_application(
+        conn,
+        {
+            "job_id": job_id,
+            "company": job.get("company"),
+            "role": job.get("title"),
+            "source": job.get("source"),
+            "job_url": job.get("url"),
+            "resume_version": str(out_dir),
+            "status": "drafted",
+            "fit_score": job.get("fit_score"),
+            "grounding_status": "flagged" if findings else "clean",
+        },
+    )
+    db.update_row(conn, "jobs", job_id, {"status": "tailored"})
+    conn.commit()
+    return app_id
+
+
 def process_job(
     conn: sqlite3.Connection,
     config: Config,

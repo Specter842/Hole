@@ -11,6 +11,11 @@ anthropic>=0.40
 # nothing extra -- .docx is unzipped and parsed with the standard library.
 pypdf>=4.0
 
+# `jobsearch mcp` -- run the pipeline as an MCP server for Claude Code /
+# Claude Desktop. Not needed for the CLI or the web UI, so it's optional
+# rather than core.
+#   pip install mcp
+
 # --------------------------------------------------------------------------
 # Optional, per dispatch channel. Install only the ones you turn on in
 # config.toml -- the pipeline degrades to "queue for review" without them.
