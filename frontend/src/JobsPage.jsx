@@ -68,7 +68,11 @@ function Pagination({ page, pageCount, onChange }) {
 
 function JobsListPage({ data }) {
   const { jobs, status, statuses } = data
-  const [filterText, setFilterText] = React.useState('')
+  // Prefills from ?q=... so a search box elsewhere (the dashboard's) can
+  // link straight into a filtered view instead of being decorative.
+  const [filterText, setFilterText] = React.useState(
+    () => new URLSearchParams(window.location.search).get('q') || ''
+  )
   const [page, setPage] = React.useState(1)
   const filtered = jobs.filter((j) => {
     if (!filterText) return true

@@ -1,7 +1,7 @@
 import React from 'react'
-import { Briefcase, Award, Sparkles, Search, Clock, Send } from 'lucide-react'
+import { Briefcase, Award, Sparkles, Search, Clock, Send, ArrowUpRight, MapPin } from 'lucide-react'
 import { C } from './tokens.js'
-import { Panel, Empty, GradientPanel, DonutLegend, ProgressListItem } from './components.jsx'
+import { Panel, Empty, GradientPanel, DonutLegend, ProgressListItem, Avatar, RowIdentity, RowAction } from './components.jsx'
 import RankedList from './RankedList.jsx'
 import { WorldMap, SourceBars, DiscoveredVsSent, RemoteDonut, FitHeatmap } from './ReachPage.jsx'
 
@@ -115,12 +115,148 @@ function StatTile({ label, value, icon: Icon, tone }) {
 // pill (StatusPills, elsewhere in the app) or a donut segment (here).
 const DONUT_TONE_COLOR = { bad: C.red, warn: C.yellow, good: C.lime, '': C.purple }
 
+// Reference's "From / To / Date / Search" card -- there is no flight
+// itinerary here, so this becomes what this app actually lets you search:
+// free text, handed to /jobs?q=... which JobsPage.jsx reads on load and
+// uses to prefill its real filter, not a decorative field that goes nowhere.
+function QuickSearch() {
+  const [q, setQ] = React.useState('')
+  return (
+    <Panel title="Search" variant="header">
+      <form
+        onSubmit={(e) => { e.preventDefault(); window.location.href = `/jobs?q=${encodeURIComponent(q)}` }}
+        className="flex flex-col gap-3"
+      >
+        <label className="flex flex-col gap-1 rounded-xl px-3 py-2" style={{ background: C.panelAlt, border: `1px solid ${C.border}` }}>
+          <span className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: C.textMute }}>Role, company, or location</span>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="e.g. platform engineer, remote"
+            className="focus-ring bg-transparent outline-none text-sm"
+            style={{ color: C.text }}
+          />
+        </label>
+        <button
+          type="submit"
+          className="btn-primary focus-ring h-10 rounded-xl text-sm font-semibold"
+          style={{ background: C.lime, color: C.onLime }}
+        >
+          Search
+        </button>
+      </form>
+    </Panel>
+  )
+}
+
+// The reference's flight row (airline, times, price, expand) -- fit score
+// stands in for price, since that is the number that actually ranks a
+// posting here.
+function TopMatchRow({ job }) {
+  return (
+    <div className="flex items-center gap-3 py-2.5" style={{ borderBottom: `1px solid ${C.border}` }}>
+      <Avatar name={job.company} size={32} />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium truncate" style={{ color: C.text }}>{job.title}</div>
+        <div className="text-xs truncate mt-0.5" style={{ color: C.textMute }}>{job.company}</div>
+      </div>
+      <div className="text-sm font-bold flex-shrink-0" style={{ color: C.lime }}>
+        {job.fit_score != null ? job.fit_score.toFixed(0) : '—'}
+      </div>
+      <RowAction href={`/jobs/${job.id}`} icon={ArrowUpRight} label={`Open ${job.title}`} />
+    </div>
+  )
+}
+
+// The reference's floating "ALC -> RUH, $121, 10 seats left, Book now" card
+// over the globe -- here, the single best-fit posting.
+function TopJobCallout({ job }) {
+  if (!job) return null
+  return (
+    <div
+      className="absolute rounded-2xl p-4 w-64 z-10"
+      style={{
+        top: '38%', left: '50%', transform: 'translate(-50%, -50%)',
+        background: C.panel, border: `1px solid ${C.border}`,
+        boxShadow: '0 16px 40px -12px rgba(0,0,0,.6)',
+      }}
+    >
+      <div className="flex items-center justify-between text-sm font-bold" style={{ color: C.text }}>
+        <span className="truncate">{job.company}</span>
+        <span style={{ color: C.lime }}>{job.fit_score != null ? job.fit_score.toFixed(0) : '—'}</span>
+      </div>
+      <div className="text-xs truncate mt-0.5" style={{ color: C.textSub }}>{job.title}</div>
+      <div className="h-px my-3" style={{ background: C.border }} />
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] flex items-center gap-1" style={{ color: C.textMute }}>
+          <MapPin size={11} /> {job.location || 'Location n/a'}
+        </span>
+        <a
+          href={`/jobs/${job.id}`}
+          className="focus-ring text-[11px] font-semibold px-2.5 py-1.5 rounded-lg flex-shrink-0"
+          style={{ background: C.bg, color: C.text }}
+        >
+          View posting
+        </a>
+      </div>
+    </div>
+  )
+}
+
+// The reference's aircraft spec sheet -- photo, badge, then label/value rows.
+// There's no photo for a job posting, so the "photo" slot becomes a large
+// company badge instead of leaving an empty frame.
+function TopJobSpec({ job }) {
+  if (!job) {
+    return (
+      <Panel variant="header" title="Top match">
+        <Empty>No scored jobs yet.</Empty>
+      </Panel>
+    )
+  }
+  return (
+    <Panel variant="header" menu={false}>
+      <div
+        className="relative rounded-xl overflow-hidden flex items-center justify-center mb-4"
+        style={{ height: 140, background: C.panelAlt }}
+      >
+        <Avatar name={job.company} size={64} />
+        {job.fit_score != null && (
+          <span
+            className="absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1 rounded-lg"
+            style={{ background: C.lime, color: C.onLime }}
+          >
+            fit {job.fit_score.toFixed(0)}
+          </span>
+        )}
+      </div>
+      <div className="text-sm font-bold" style={{ color: C.text }}>{job.company}</div>
+      <div className="text-xs mt-0.5 mb-4" style={{ color: C.textSub }}>{job.title}</div>
+      <dl className="flex flex-col gap-3 text-sm">
+        {[
+          ['Location', job.location || '—'],
+          ['Remote', job.remote ? 'Yes' : 'No'],
+          ['Source', job.source || '—'],
+          ['Status', job.status || '—'],
+          ['Posted', job.posted_at || '—'],
+        ].map(([label, value]) => (
+          <div key={label} className="flex items-center justify-between" style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 10 }}>
+            <dt style={{ color: C.textMute }}>{label}</dt>
+            <dd className="font-medium text-right" style={{ color: C.text }}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </Panel>
+  )
+}
+
 export default function DashboardPage({ data }) {
   const {
     notices, stats, jobs_by_status, apps_by_status, model, last_run,
     country_pins, postings_by_country, by_source, by_location,
-    sent_vs_discovered, remote, onsite, fit_by_source, recent_queue,
+    sent_vs_discovered, remote, onsite, fit_by_source, recent_queue, top_jobs,
   } = data
+  const topJob = (top_jobs && top_jobs[0]) || null
 
   const totalPostings = (postings_by_country || []).reduce((s, [, v]) => s + v, 0)
 
@@ -139,11 +275,38 @@ export default function DashboardPage({ data }) {
     <>
       <NoticeBanner notices={notices} />
 
-      {/* Hero row 1: grouped profile/pipeline effort, application mix, and
-          the one thing most worth doing next -- mirrors the reference's
-          Performance Metric | Team Capacity | Productivity Hub layout,
-          every number real. */}
-      <div className="grid lg:grid-cols-[1.4fr_1fr_1fr] gap-6 mb-6">
+      {/* Hero: search + top matches | the globe, with the best match
+          floating over it | that match's spec sheet -- the reference's
+          From/To/Search + Flights list | globe | aircraft spec panel,
+          structurally, not just recolored. */}
+      <div className="grid lg:grid-cols-[300px_1fr_300px] gap-6 mb-6">
+        <div className="flex flex-col gap-6">
+          <QuickSearch />
+          <Panel title={`Top matches (${top_jobs?.length || 0})`} variant="header">
+            {top_jobs && top_jobs.length ? (
+              <div className="flex flex-col">
+                {top_jobs.map((j) => <TopMatchRow key={j.id} job={j} />)}
+              </div>
+            ) : (
+              <Empty>No scored jobs yet.</Empty>
+            )}
+          </Panel>
+        </div>
+
+        <Panel title="Global reach" variant="header" className="relative">
+          <div className="relative w-full rounded-lg overflow-hidden" style={{ aspectRatio: '1 / 1', minHeight: 420, background: C.panel }}>
+            <WorldMap pins={country_pins} />
+            <TopJobCallout job={topJob} />
+          </div>
+        </Panel>
+
+        <TopJobSpec job={topJob} />
+      </div>
+
+      {/* Secondary row: profile/pipeline effort, application mix, sourcing
+          trend, automation status, and the top of the review queue -- real
+          detail beyond the hero, same as the app has always carried. */}
+      <div className="grid lg:grid-cols-[1.2fr_1fr_1fr] gap-6 mb-6">
         <Panel title="Profile & pipeline" variant="header">
           <div className="grid grid-cols-2 gap-5">
             {performanceStats.map((m, i) => (
@@ -173,9 +336,6 @@ export default function DashboardPage({ data }) {
         </GradientPanel>
       </div>
 
-      {/* Hero row 2: sourcing trend, automation status, and the top of the
-          review queue -- Project Revenue | AI Assistance | Continue
-          Learning in the reference, mapped to what this app actually has. */}
       <div className="grid lg:grid-cols-[1.2fr_1fr_1.1fr] gap-6 mb-6">
         <Panel title="Discovered vs sent" variant="header">
           <DiscoveredVsSent series={sent_vs_discovered} />
@@ -214,12 +374,7 @@ export default function DashboardPage({ data }) {
         </Panel>
       </div>
 
-      <div className="grid lg:grid-cols-[1.7fr_1fr] gap-6 mb-6">
-        <Panel title="Global reach" variant="header">
-          <div className="relative w-full rounded-lg overflow-hidden" style={{ aspectRatio: '2 / 1', maxHeight: 340, background: C.panel }}>
-            <WorldMap pins={country_pins} />
-          </div>
-        </Panel>
+      <div className="grid lg:grid-cols-3 gap-6 mb-6">
         <Panel title="Reach by country" variant="header">
           <div className="mb-4">
             <div className="text-2xl font-bold" style={{ color: C.text }}>
@@ -227,19 +382,13 @@ export default function DashboardPage({ data }) {
             </div>
             <div className="text-xs" style={{ color: C.textMute }}>postings, across every named country</div>
           </div>
-          <RankedList rows={postings_by_country} maxHeight={340} />
+          <RankedList rows={postings_by_country} maxHeight={280} />
         </Panel>
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-6 mb-6">
         <Panel title="Jobs by status" variant="header">
           <StatusPills rows={jobs_by_status} />
         </Panel>
         <Panel title="Remote vs onsite" variant="header">
           <RemoteDonut remote={remote} onsite={onsite} />
-        </Panel>
-        <Panel title="Fit score by source" variant="header">
-          <FitHeatmap rows={fit_by_source.rows} cols={fit_by_source.cols} grid={fit_by_source.grid} />
         </Panel>
       </div>
 
@@ -249,6 +398,12 @@ export default function DashboardPage({ data }) {
         </Panel>
         <Panel title="Top locations" variant="header">
           <RankedList rows={by_location} />
+        </Panel>
+      </div>
+
+      <div className="grid mt-6">
+        <Panel title="Fit score by source" variant="header">
+          <FitHeatmap rows={fit_by_source.rows} cols={fit_by_source.cols} grid={fit_by_source.grid} />
         </Panel>
       </div>
     </>

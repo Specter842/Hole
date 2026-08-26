@@ -154,6 +154,13 @@ def dashboard(conn: sqlite3.Connection, config: Config) -> str:
     ).fetchone()
     last_run = db.row_to_dict(last) if last else None
 
+    top_jobs = db.rows_to_dicts(
+        conn.execute(
+            "SELECT * FROM jobs WHERE fit_score IS NOT NULL "
+            "ORDER BY fit_score DESC, id DESC LIMIT 5"
+        ).fetchall()
+    )
+
     postings_by_country = _postings_by_country(conn)
     applications_by_country = _applications_by_country(conn)
     country_pins = _country_pins(postings_by_country)
@@ -215,6 +222,21 @@ def dashboard(conn: sqlite3.Connection, config: Config) -> str:
                 "fit_score": a.get("fit_score"),
             }
             for a in drafted
+        ],
+        "top_jobs": [
+            {
+                "id": j["id"],
+                "title": j.get("title"),
+                "company": j.get("company"),
+                "location": j.get("location"),
+                "remote": bool(j.get("remote")),
+                "fit_score": j.get("fit_score"),
+                "source": j.get("source"),
+                "status": j.get("status"),
+                "posted_at": j.get("posted_at"),
+                "url": j.get("url"),
+            }
+            for j in top_jobs
         ],
     }
     return _react_page("Dashboard", "", data)

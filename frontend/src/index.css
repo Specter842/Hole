@@ -7,32 +7,32 @@
    jobsearch/web/pages.py's _react_page(). */
 html, body {
   margin: 0;
-  background: #0B0C0E;
+  background: #1B1210;
   color: #FFFFFF;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 #jobsearch-react-root {
-  --panel: #151619;
-  --panel-alt: #1E2023;
-  --border: rgba(255,255,255,0.08);
+  --panel: #271A17;
+  --panel-alt: #32211D;
+  --border: rgba(255,225,205,0.10);
 }
 
-.dashboard-root input::placeholder { color: #6b6f76; }
+.dashboard-root input::placeholder { color: #8c7a70; }
 .dashboard-root ::-webkit-scrollbar { width: 8px; height: 8px; }
-.dashboard-root ::-webkit-scrollbar-thumb { background: #2a2c30; border-radius: 8px; }
-.nav-btn:hover { background: rgba(255,255,255,0.06) !important; color: #ffffff !important; }
-.nav-pill:hover { background: rgba(255,255,255,0.06) !important; }
-.icon-btn:hover { background: rgba(255,255,255,0.08) !important; }
-.btn-outline:hover { background: rgba(255,255,255,0.05) !important; border-color: rgba(255,255,255,0.22) !important; }
-.btn-primary:hover { filter: brightness(1.06); }
+.dashboard-root ::-webkit-scrollbar-thumb { background: #3d2a22; border-radius: 8px; }
+.nav-btn:hover { background: rgba(255,225,205,0.06) !important; color: #ffffff !important; }
+.nav-pill:hover { background: rgba(255,225,205,0.06) !important; }
+.icon-btn:hover { background: rgba(255,225,205,0.08) !important; }
+.btn-outline:hover { background: rgba(255,225,205,0.05) !important; border-color: rgba(255,225,205,0.22) !important; }
+.btn-primary:hover { filter: brightness(1.08); }
 .link-teal:hover, .link-lime:hover { filter: brightness(1.15); }
-.dropdown-item:hover { background: rgba(255,255,255,0.06) !important; }
+.dropdown-item:hover { background: rgba(255,225,205,0.06) !important; }
 .dash-card { transition: all 0.2s; }
-.dash-card:hover { background: #1c1e21 !important; border-color: rgba(255,255,255,0.16) !important; }
+.dash-card:hover { background: #32211D !important; border-color: rgba(255,225,205,0.18) !important; }
 .data-row { transition: background-color 0.12s; }
-.data-row:hover { background: rgba(255,255,255,0.025); }
-.focus-ring:focus-visible { outline: 2px solid #C6FF3D; outline-offset: 2px; }
+.data-row:hover { background: rgba(255,225,205,0.03); }
+.focus-ring:focus-visible { outline: 2px solid #E8834A; outline-offset: 2px; }
 .page-btn:hover:not(:disabled) { background: rgba(255,255,255,0.06) !important; color: #ffffff !important; }
 .page-btn:disabled { opacity: 0.35; cursor: default; }
 .filter-pill-inactive:hover { background: rgba(255,255,255,0.04) !important; color: #ffffff !important; }
