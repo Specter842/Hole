@@ -213,9 +213,13 @@ class TerminalPageTests(unittest.TestCase):
         self.app = App(str(self.db_path), Config(), "tok")
 
     def test_it_renders_on_an_empty_database(self) -> None:
+        # /terminal serves the one Analytics page now (jobsearch/web/
+        # evoque_pages.analytics). What this guards is unchanged: the URL still
+        # returns a page, and an empty database says so instead of blowing up.
         status, body = self.app.get("/terminal", {})
         self.assertEqual(status, 200)
-        self.assertIn("Terminal", body)
+        self.assertIn("Analytics", body)
+        self.assertIn("Nothing to plot yet", body)
 
     def test_it_renders_with_data(self) -> None:
         conn = db.connect(self.db_path)
@@ -233,7 +237,10 @@ class TerminalPageTests(unittest.TestCase):
         status, body = self.app.get("/terminal", {})
         self.assertEqual(status, 200)
         self.assertIn("greenhouse", body)
-        self.assertIn("data-chart=", body)
+        # Charts are inline SVG rendered server-side rather than a `data-chart`
+        # placeholder hydrated later, so assert the drawn figure itself.
+        self.assertIn("Source reach", body)
+        self.assertIn("<svg", body)
 
 
 if __name__ == "__main__":

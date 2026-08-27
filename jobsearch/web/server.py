@@ -31,7 +31,7 @@ from typing import Any, Callable
 
 from .. import answers, db, pipeline
 from ..config import Config
-from . import assets, pages
+from . import assets, evoque, evoque_pages, pages
 from .html import esc, layout
 
 ALLOWED_HOSTS_SUFFIX = ("localhost", "127.0.0.1", "[::1]")
@@ -82,39 +82,57 @@ class App:
         parts = [p for p in path.strip("/").split("/") if p]
         conn = self._connect()
         try:
+            # Every page is the Evoque shell (evoque_pages). The React
+            # bundle's pages are gone from routing; `pages.py` is still the
+            # single source of the aggregation queries both used.
+            one = lambda k: (query.get(k) or [""])[0]  # noqa: E731
             if not parts:
-                return 200, pages.dashboard(conn, self._fresh_config())
+                return 200, evoque_pages.dashboard(conn, self._fresh_config())
             if parts == ["jobs"]:
-                status = (query.get("status") or [None])[0]
-                return 200, pages.jobs_list(conn, status=status)
+                return 200, evoque_pages.jobs(
+                    conn,
+                    q=one("q"),
+                    where=one("where"),
+                    status=(query.get("status") or [None])[0],
+                    scope=one("scope") or "remote",
+                )
             if len(parts) == 2 and parts[0] == "jobs" and parts[1].isdigit():
-                html = pages.job_detail(conn, int(parts[1]), self._fresh_config(), self.token)
-                return (200, html) if html else _page("No such job", f"Job {parts[1]} is not in the database.", 404)
-            if parts == ["terminal"]:
-                return 200, pages.terminal(conn)
-            if parts == ["reach"]:
-                return 200, pages.reach(conn)
-            if parts == ["funnel"]:
-                return 200, pages.funnel(conn)
-            if parts == ["queue"]:
-                return 200, pages.queue(conn)
-            if len(parts) == 2 and parts[0] == "applications" and parts[1].isdigit():
-                html = pages.application_detail(conn, int(parts[1]), self.token)
-                return (200, html) if html else _page("No such application", f"Application {parts[1]} does not exist.", 404)
-            if parts == ["profile"]:
-                return 200, pages.profile(conn)
-            if parts == ["profile", "edit"]:
-                return 200, pages.profile_edit(conn, self.token)
-            if parts == ["profile", "build"]:
-                return 200, pages.profile_build(conn, self.token)
-            if parts == ["answers"]:
-                return 200, pages.answers_page(conn, self.token)
-            if parts == ["review"]:
-                return 200, pages.review(conn, self.token)
-            if parts == ["runs"]:
-                return 200, pages.runs(conn)
+                html = evoque_pages.job_detail(
+                    conn, int(parts[1]), self._fresh_config(), self.token
+                )
+                return (200, html) if html else _page(
+                    "No such job", f"Job {parts[1]} is not in the database.", 404
+                )
             if parts == ["competitions"]:
-                return 200, pages.competitions_page(conn, self.token)
+                return 200, evoque_pages.competitions(conn, q=one("q"))
+            if parts == ["queue"]:
+                return 200, evoque_pages.queue(conn)
+            if parts == ["resume"]:
+                return 200, evoque_pages.resume(conn)
+            if len(parts) == 2 and parts[0] == "applications" and parts[1].isdigit():
+                html = evoque_pages.application_detail(conn, int(parts[1]), self.token)
+                return (200, html) if html else _page(
+                    "No such application", f"Application {parts[1]} does not exist.", 404
+                )
+            if parts == ["profile"]:
+                return 200, evoque_pages.profile(conn)
+            if parts == ["profile", "edit"]:
+                return 200, evoque_pages.profile_edit(conn, self.token)
+            if parts == ["profile", "build"]:
+                return 200, evoque_pages.profile_build(conn, self.token)
+            if parts == ["analytics"]:
+                return 200, evoque_pages.analytics(conn)
+            if parts == ["runs"]:
+                return 200, evoque_pages.runs(conn)
+            if parts == ["answers"]:
+                return 200, evoque_pages.answers(conn, self.token)
+            if parts == ["review"]:
+                return 200, evoque_pages.review(conn, self.token)
+            # `/reach`, `/funnel` and `/terminal` were three views of the same
+            # figures. They serve the one Analytics page now rather than
+            # redirecting, so every URL that worked before still returns a page.
+            if parts in (["reach"], ["funnel"], ["terminal"]):
+                return 200, evoque_pages.analytics(conn)
             return _page("Not found", f"No page at {path}", 404)
         finally:
             conn.close()
@@ -423,8 +441,7 @@ def _handler_class(app: App) -> type[BaseHTTPRequestHandler]:
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(payload)))
-            # This page never belongs in a frame, and never needs to load
-            # anything from another origin.
+            # This page never belongs in a frame.
             self.send_header("X-Frame-Options", "DENY")
             self.send_header("Referrer-Policy", "no-referrer")
             # Still `default-src 'none'`. The one script on these pages is
@@ -432,17 +449,26 @@ def _handler_class(app: App) -> type[BaseHTTPRequestHandler]:
             # every other inline script stays refused, including anything a job
             # description manages to smuggle through. `data:` is for the grain
             # texture, which is an inline SVG.
-            script_src = f"'{assets.SITE_JS_HASH}'"
+            script_src = f"'{assets.SITE_JS_HASH}' '{evoque.SCRIPT_HASH}'"
             if assets.REACT_BUNDLE_JS_HASH:
                 # Only the Reach/Funnel pages emit a second inline script (the
                 # built React bundle); every other page still carries just
                 # SITE_JS_HASH, so allow-listing this hash too is a no-op
                 # everywhere else.
                 script_src += f" '{assets.REACT_BUNDLE_JS_HASH}'"
+            # Google Fonts is the one external origin this policy allows, and
+            # only for a stylesheet and the font files it pulls -- the Evoque
+            # pages' typography (Sora/Inter) is part of the design and several
+            # rules name Sora with no fallback. The tradeoff is real and worth
+            # stating plainly: it means Google sees a request each time one of
+            # these pages loads, from a site that displays a full career
+            # history. Nothing else may be fetched cross-origin; to close even
+            # this, self-host the two woff2 files and drop these two sources.
             self.send_header(
                 "Content-Security-Policy",
                 "default-src 'none'; "
-                "style-src 'unsafe-inline'; "
+                "style-src 'unsafe-inline' https://fonts.googleapis.com; "
+                "font-src https://fonts.gstatic.com; "
                 f"script-src {script_src}; "
                 "img-src 'self' data:; "
                 "form-action 'self'",

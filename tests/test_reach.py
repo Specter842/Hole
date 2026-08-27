@@ -250,16 +250,14 @@ class ReachPageIntegrationTests(unittest.TestCase):
         self.assertIn("Germany", body)
 
     def test_it_survives_a_completely_empty_database(self) -> None:
-        # /reach is now the React port (frontend/): the server just embeds a
-        # JSON payload and lets the client render, so the old "Nothing to
-        # plot yet" SSR empty-state text no longer applies here -- that
-        # string is still asserted on /terminal below, which still uses the
-        # server-rendered charts.py engine. The thing this test actually
-        # guards is that an empty database doesn't blow up the page.
+        # /reach serves the server-rendered Analytics page. The thing this
+        # test actually guards is that an empty database doesn't blow up the
+        # page -- and now that it is server-rendered, the empty state is real
+        # text rather than something a client would have to fill in.
         status, body = self.app.get("/reach", {})
         self.assertEqual(status, 200)
-        self.assertIn('id="jobsearch-react-root"', body)
-        self.assertIn('data-route="reach"', body)
+        self.assertIn("Analytics", body)
+        self.assertIn("Nothing to plot yet", body)
 
     def test_by_country_section_lists_every_country_a_compound_posting_names(self) -> None:
         conn = db.connect(self.db_path)
