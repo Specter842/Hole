@@ -129,11 +129,13 @@ def _report_counts(created: dict[str, int]) -> None:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
+    turso_url = os.environ.get("TURSO_DATABASE_URL")
     path = db.resolve_db_path(args.db)
     existed = path.exists()
     with db.session(args.db) as conn:
         counts = db.profile_counts(conn)
-    _out(f"{'Verified' if existed else 'Created'} database at {path}")
+    where = turso_url or path
+    _out(f"{'Verified' if (existed or turso_url) else 'Created'} database at {where}")
     _out(f"  schema v{schema.SCHEMA_VERSION}")
     _report_counts({k: v for k, v in counts.items() if v})
     if not counts.get("experiences"):
@@ -1141,7 +1143,8 @@ def cmd_web(args: argparse.Namespace) -> int:
     if config is None:
         return 1
     db_path = db.resolve_db_path(getattr(args, "db", None))
-    if not db_path.is_file():
+    using_turso = bool(os.environ.get("TURSO_DATABASE_URL"))
+    if not using_turso and not db_path.is_file():
         _err(f"No database at {db_path}. Run `python -m jobsearch init` first.")
         return 1
 

@@ -65,11 +65,20 @@ def resolve_db_path(explicit: str | os.PathLike[str] | None = None) -> Path:
 
 
 def connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connection:
-    path = resolve_db_path(db_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fresh = not path.exists()
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
+    turso_url = os.environ.get("TURSO_DATABASE_URL")
+    if turso_url:
+        from . import libsql_shim
+
+        conn = libsql_shim.connect(turso_url, os.environ.get("TURSO_AUTH_TOKEN", ""))
+        fresh = not conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    else:
+        path = resolve_db_path(db_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fresh = not path.exists()
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     if not fresh:
         migrate_v1_to_v2(conn)

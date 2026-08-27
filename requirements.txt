@@ -11,6 +11,12 @@ anthropic>=0.40
 # nothing extra -- .docx is unzipped and parsed with the standard library.
 pypdf>=4.0
 
+# Only needed if TURSO_DATABASE_URL is set (jobsearch/libsql_shim.py): lets the
+# web dashboard use a free hosted Turso DB instead of a local sqlite3 file, for
+# hosts (e.g. Render's free tier) with no persistent disk. Pure Python, HTTP
+# transport -- no Rust toolchain required, unlike the native `libsql` package.
+libsql-client>=0.3
+
 # `jobsearch mcp` -- run the pipeline as an MCP server for Claude Code /
 # Claude Desktop. Not needed for the CLI or the web UI, so it's optional
 # rather than core.
