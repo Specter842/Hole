@@ -107,6 +107,8 @@ class App:
                 return 200, evoque_pages.competitions(conn, q=one("q"))
             if parts == ["todos"]:
                 return 200, evoque_pages.todos(conn, self.token)
+            if parts == ["publications"]:
+                return 200, evoque_pages.publications(conn, self.token)
             if parts == ["queue"]:
                 return 200, evoque_pages.queue(conn)
             if parts == ["resume"]:
@@ -173,6 +175,18 @@ class App:
                 return 303, "/competitions"
             if parts == ["todos", "add"]:
                 return self._add_todo(conn, fields)
+            if parts == ["publications", "add"]:
+                return self._add_publication_item(conn, fields)
+            if len(parts) == 3 and parts[0] == "publications" and parts[1].isdigit() and parts[2] == "status":
+                status = fields.get("status", "")
+                if status in {"not_started", "in_progress", "completed"}:
+                    conn.execute("UPDATE publication_items SET status = ? WHERE id = ?", (status, int(parts[1])))
+                    conn.commit()
+                return 303, "/publications"
+            if len(parts) == 3 and parts[0] == "publications" and parts[1].isdigit() and parts[2] == "delete":
+                conn.execute("DELETE FROM publication_items WHERE id = ?", (int(parts[1]),))
+                conn.commit()
+                return 303, "/publications"
             if len(parts) == 3 and parts[0] == "todos" and parts[1].isdigit() and parts[2] == "toggle":
                 conn.execute("UPDATE todo_items SET completed = 1 - completed WHERE id = ? AND kind = 'todo'", (int(parts[1]),))
                 conn.commit()
@@ -258,6 +272,17 @@ class App:
         db.insert_row(conn, "todo_items", {"kind": kind, "text": text})
         conn.commit()
         return 303, "/todos"
+
+    def _add_publication_item(self, conn: sqlite3.Connection, fields: dict[str, str]) -> tuple[int, str]:
+        title = (fields.get("title") or "").strip()
+        kind = (fields.get("kind") or "").strip()
+        if not title:
+            return 303, "/publications"
+        if kind not in {"publication", "resource", "idea"}:
+            return _page("Not added", "Choose a valid publication tab.", 400)
+        db.insert_row(conn, "publication_items", {"kind": kind, "title": title, "url": (fields.get("url") or "").strip() or None})
+        conn.commit()
+        return 303, "/publications"
 
     # Which tables the builder page may write, and the delete confirmation each
     # needs. An allow-list, not a passthrough: the entity name arrives in the

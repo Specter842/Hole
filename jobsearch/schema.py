@@ -329,6 +329,15 @@ CREATE TABLE IF NOT EXISTS application_answers (
     updated_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS publication_items (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('publication', 'resource', 'idea')),
+    title TEXT NOT NULL,
+    url TEXT,
+    status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started', 'in_progress', 'completed')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- A lightweight personal workspace alongside the job-search data.  Ideas are
 -- deliberately separate from actionable to-dos so a rough thought is never
 -- presented as work that has fallen behind.

@@ -24,6 +24,7 @@ from .html import esc
 NAV = [
     ("", "Dashboard", "home"),
     ("todos", "Ideas & To Dos", "checklist"),
+    ("publications", "Publications", "file"),
     ("jobs", "Jobs", "briefcase"),
     ("competitions", "Competitions", "trophy"),
     ("queue", "Queue", "clock"),
@@ -195,6 +196,11 @@ _EXTRA_CSS = """
 .todo-toggle:hover{color:var(--accent)}
 .todo-delete:hover{color:var(--danger)}
 .todo-toggle svg,.todo-delete svg{vertical-align:middle}
+.pub-tabs{display:flex;gap:10px;margin:16px 0 12px}
+.sticky-tab{display:inline-flex;padding:10px 18px;border-radius:10px 10px 4px 4px;background:#e8c96a;color:#322817;font-weight:700;font-size:13px;box-shadow:0 3px 0 rgba(0,0,0,.2);transform:rotate(-1deg)}
+.sticky-tab.resource{background:#9ddbd1;transform:rotate(1deg)}.sticky-tab.idea{background:#e9a7bd}
+.pub-status-bar{display:flex;gap:22px;align-items:center;padding:12px 16px;border:1px solid var(--line);border-radius:13px;background:var(--panel-3);font-size:12px}.pub-status-bar span{display:flex;align-items:center;gap:7px}.pub-status-bar b{margin-left:2px}.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:#9b8f86}.status-dot.in_progress{background:#e8c96a}.status-dot.completed{background:#4bb573}
+.pub-card{display:flex;align-items:center;gap:10px;padding:11px 12px;margin:7px 0;border:1px solid var(--line);border-radius:11px;background:var(--panel-3);font-size:13px}.pub-card>div{flex:1;min-width:0}.pub-card b{display:block;white-space:pre-wrap}.pub-card a{display:block;font-size:11px;color:var(--muted-2);border:0}.pub-card select{background:var(--panel-2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:5px;font-size:11px}
 @media(max-width:760px){.idea-todo-grid{grid-template-columns:1fr}.idea-todo-col{min-height:0}}
 
 .trow{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:13px;

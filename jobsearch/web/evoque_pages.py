@@ -914,6 +914,30 @@ def runs(conn: sqlite3.Connection) -> str:
 # --------------------------------------------------------------------------- ideas and to-dos
 
 
+def publications(conn: sqlite3.Connection, token: str) -> str:
+    counts = _counts(conn)
+    rows = db.rows_to_dicts(conn.execute("SELECT * FROM publication_items ORDER BY id DESC").fetchall())
+    tabs = [("publication", "Publications"), ("resource", "Resources"), ("idea", "Ideas")]
+    def cards(items: list[dict[str, Any]]) -> str:
+        if not items:
+            return '<div class="empty">Nothing here yet.</div>'
+        out = []
+        for item in items:
+            status = item.get("status") or "not_started"
+            options = "".join(f'<option value="{s}"{" selected" if s == status else ""}>{label}</option>' for s, label in (("not_started", "Not started"), ("in_progress", "In progress"), ("completed", "Completed")))
+            out.append(f'<div class="pub-card"><div><b>{esc(item["title"])}</b>' + (f'<a href="{esc(item["url"])}" target="_blank">Open link</a>' if item.get("url") else "") + f'</div><form method="post" action="/publications/{int(item["id"])}/status"><input type="hidden" name="token" value="{esc(token)}"><select name="status" onchange="this.form.submit()">{options}</select></form><form method="post" action="/publications/{int(item["id"])}/delete"><input type="hidden" name="token" value="{esc(token)}"><button class="todo-delete" type="submit" aria-label="Delete">{E.icon("trash", 15)}</button></form></div>')
+        return ''.join(out)
+    def panel(kind: str, title: str) -> str:
+        body = cards([r for r in rows if r["kind"] == kind])
+        form = E.form("/publications/add", token, f'<input type="hidden" name="kind" value="{kind}">' + E.field("Title", "title") + E.field("Link (optional)", "url", ph="https://"), f"Add {title[:-1]}", cls="capture-form")
+        return E.panel(title, body + form)
+    status_counts = {s: sum(1 for r in rows if r.get("status") == s) for s in ("not_started", "in_progress", "completed")}
+    status_bar = '<div class="pub-status-bar">' + ''.join(f'<span><i class="status-dot {s}"></i>{label}<b>{status_counts[s]}</b></span>' for s, label in (("not_started", "Not started"), ("in_progress", "In progress"), ("completed", "Completed"))) + '</div>'
+    body = status_bar + '<div class="pub-tabs">' + ''.join(f'<span class="sticky-tab {kind}">{title}</span>' for kind, title in tabs) + '</div><div class="grid g2">' + panel("publication", "Publications") + panel("resource", "Resources") + '</div>' + E.panel("Ideas", cards([r for r in rows if r["kind"] == "idea"]) + E.form("/publications/add", token, '<input type="hidden" name="kind" value="idea">' + E.field("Title", "title"), "Add Idea", cls="capture-form"), sub="Notes for future writing")
+    sidebar = E.list_panel(title="Publications", sub=f"{len(rows)} tracked", rows=''.join(f'<div class="trow"><span class="ti">{t}</span><span class="tag">{sum(1 for r in rows if r["kind"] == k)}</span></div>' for k, t in tabs))
+    return E.page(title="Publications", heading="Publications", sub="Track your work, resources, and ideas", active="publications", sidebar=sidebar, main=f'<div class="main-scroll">{body}</div>', counts=counts)
+
+
 def todos(conn: sqlite3.Connection, token: str) -> str:
     """A small, persistent scratchpad: ideas on the left, actions on the right."""
     counts = _counts(conn)
