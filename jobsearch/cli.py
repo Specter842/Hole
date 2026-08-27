@@ -1132,9 +1132,11 @@ def cmd_mcp(args: argparse.Namespace) -> int:
 
 
 def cmd_web(args: argparse.Namespace) -> int:
+    from .llm import load_dotenv
     from .web import serve
     from .web.server import WebError
 
+    load_dotenv()  # JOBSEARCH_PASSWORD lives in .env like the other secrets
     config = _load_config(args)
     if config is None:
         return 1
