@@ -365,10 +365,11 @@ def search_card(*, action: str, q: str = "", where: str = "", extra: str = "") -
 
 
 def list_panel(*, title: str, sub: str, rows: str, tools: str = "") -> str:
+    body = rows or '<div class="empty">Nothing here yet.</div>'
     return (
         '<div class="flights"><div class="flights-head"><div>'
         f'<h2>{esc(title)}</h2><div class="sub">{esc(sub)}</div></div>{tools}</div>'
-        f'<div class="flight-list">{rows or "<div class=\'empty\'>Nothing here yet.</div>"}</div></div>'
+        f'<div class="flight-list">{body}</div></div>'
     )
 
 
