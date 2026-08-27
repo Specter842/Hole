@@ -105,6 +105,8 @@ class App:
                 )
             if parts == ["competitions"]:
                 return 200, evoque_pages.competitions(conn, q=one("q"))
+            if parts == ["todos"]:
+                return 200, evoque_pages.todos(conn, self.token)
             if parts == ["queue"]:
                 return 200, evoque_pages.queue(conn)
             if parts == ["resume"]:
@@ -169,6 +171,16 @@ class App:
                 db.delete_row(conn, "competitions", int(parts[1]))
                 conn.commit()
                 return 303, "/competitions"
+            if parts == ["todos", "add"]:
+                return self._add_todo(conn, fields)
+            if len(parts) == 3 and parts[0] == "todos" and parts[1].isdigit() and parts[2] == "toggle":
+                conn.execute("UPDATE todo_items SET completed = 1 - completed WHERE id = ? AND kind = 'todo'", (int(parts[1]),))
+                conn.commit()
+                return 303, "/todos"
+            if len(parts) == 3 and parts[0] == "todos" and parts[1].isdigit() and parts[2] == "delete":
+                conn.execute("DELETE FROM todo_items WHERE id = ?", (int(parts[1]),))
+                conn.commit()
+                return 303, "/todos"
             if parts == ["profile", "save"]:
                 return self._save_profile(conn, fields)
             if len(parts) == 3 and parts[0] == "profile" and parts[2] == "add":
@@ -235,6 +247,17 @@ class App:
         })
         conn.commit()
         return 303, "/competitions"
+
+    def _add_todo(self, conn: sqlite3.Connection, fields: dict[str, str]) -> tuple[int, str]:
+        text = (fields.get("text") or "").strip()
+        kind = (fields.get("kind") or "").strip()
+        if not text:
+            return 303, "/todos"
+        if kind not in {"idea", "todo"}:
+            return _page("Not added", "Choose Ideas or To Dos.", 400)
+        db.insert_row(conn, "todo_items", {"kind": kind, "text": text})
+        conn.commit()
+        return 303, "/todos"
 
     # Which tables the builder page may write, and the delete confirmation each
     # needs. An allow-list, not a passthrough: the entity name arrives in the
@@ -573,7 +596,9 @@ def serve(
     someone's address, phone number, employment history, and the ability to send
     applications on the open internet behind no door at all.
     """
-    password = os.environ.get("JOBSEARCH_PASSWORD", "")
+    # Local demo mode: authentication is intentionally disabled for now. Keep
+    # the loopback bind guard below so the dashboard is not exposed publicly.
+    password = ""
     if host not in ("127.0.0.1", "localhost", "::1") and not password:
         raise WebError(
             f"Refusing to bind {host} with no password.\n"

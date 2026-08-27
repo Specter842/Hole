@@ -911,6 +911,85 @@ def runs(conn: sqlite3.Connection) -> str:
 # --------------------------------------------------------------------------- answers
 
 
+# --------------------------------------------------------------------------- ideas and to-dos
+
+
+def todos(conn: sqlite3.Connection, token: str) -> str:
+    """A small, persistent scratchpad: ideas on the left, actions on the right."""
+    counts = _counts(conn)
+    rows = db.rows_to_dicts(
+        conn.execute(
+            "SELECT id, kind, text, completed FROM todo_items "
+            "ORDER BY completed ASC, id DESC"
+        ).fetchall()
+    )
+    ideas = [row for row in rows if row["kind"] == "idea"]
+    todos_ = [row for row in rows if row["kind"] == "todo"]
+
+    def cards(items: list[dict[str, Any]], *, actionable: bool) -> str:
+        if not items:
+            return '<div class="empty">Nothing here yet.</div>'
+        out = []
+        for item in items:
+            item_id = int(item["id"])
+            done = bool(item["completed"])
+            controls = ""
+            if actionable:
+                action_label = "Mark incomplete" if done else "Mark complete"
+                controls += (
+                    f'<form class="inline" method="post" action="/todos/{item_id}/toggle">'
+                    f'<input type="hidden" name="token" value="{esc(token)}">'
+                    f'<button class="todo-toggle" type="submit" aria-label="{action_label}">'
+                    + E.icon("check" if done else "clock", 16) + "</button></form>"
+                )
+            controls += (
+                f'<form class="inline" method="post" action="/todos/{item_id}/delete">'
+                f'<input type="hidden" name="token" value="{esc(token)}">'
+                '<button class="todo-delete" type="submit" aria-label="Delete">'
+                + E.icon("trash", 15) + "</button></form>"
+            )
+            card_class = "idea-card done" if done else "idea-card"
+            out.append(
+                f'<div class="{card_class}"><p>{esc(item["text"])}</p>{controls}</div>'
+            )
+        return '<div class="idea-todo-list">' + "".join(out) + "</div>"
+
+    def column(title: str, hint: str, kind: str, items: list[dict[str, Any]], *, actionable: bool) -> str:
+        form = E.form(
+            "/todos/add", token,
+            f'<input type="hidden" name="kind" value="{kind}">'
+            + E.textarea("", "text", rows=3),
+            f"Add {title[:-1]}", cls="capture-form",
+        )
+        return E.panel(title, cards(items, actionable=actionable) + form, sub=hint)
+
+    body = (
+        '<div class="idea-todo-grid">'
+        + '<div class="idea-todo-col">'
+        + column("Ideas", "Capture thoughts worth returning to", "idea", ideas, actionable=False)
+        + "</div><div class=\"idea-todo-col\">"
+        + column("To Dos", "Keep the next actions in view", "todo", todos_, actionable=True)
+        + "</div></div>"
+    )
+    sidebar = E.list_panel(
+        title="Your workspace",
+        sub="A place for thoughts and next actions",
+        rows=(
+            f'<div class="trow"><span class="ti">Ideas</span><span class="tag">{len(ideas)}</span></div>'
+            f'<div class="trow"><span class="ti">To dos</span><span class="tag">{len(todos_)}</span></div>'
+        ),
+    )
+    return E.page(
+        title="Ideas & To Dos", heading="Ideas & To Dos",
+        sub=f"{len(ideas)} ideas · {sum(not bool(i['completed']) for i in todos_)} open to dos",
+        active="todos", sidebar=sidebar,
+        main=f'<div class="main-scroll">{body}</div>', counts=counts,
+    )
+
+
+# --------------------------------------------------------------------------- answers
+
+
 def answers(conn: sqlite3.Connection, token: str) -> str:
     """The answer bank. Gaps first -- those are the questions that actually
     stopped an application, so the most expensive blank sits at the top."""

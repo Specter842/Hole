@@ -23,6 +23,7 @@ from .html import esc
 # pages pass; `count` is looked up in the counts mapping a page supplies.
 NAV = [
     ("", "Dashboard", "home"),
+    ("todos", "Ideas & To Dos", "checklist"),
     ("jobs", "Jobs", "briefcase"),
     ("competitions", "Competitions", "trophy"),
     ("queue", "Queue", "clock"),
@@ -50,6 +51,7 @@ ICONS = {
     "history": '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 8v4l3 2"/>',
     "chat": '<path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-7a8 8 0 0 1 8-8h2a8 8 0 0 1 8 4z"/>',
     "check": '<path d="m5 13 4 4L19 7"/>',
+    "checklist": '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3 6 1.5 1.5L7 4.5M3 12l1.5 1.5L7 10.5M3 18l1.5 1.5L7 16.5"/>',
     "x": '<path d="M6 6l12 12M18 6 6 18"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
     "trash": '<path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/>',
@@ -176,6 +178,24 @@ _EXTRA_CSS = """
 .stat .k{font-size:11px;color:var(--muted-2);margin-top:5px}
 .stat .d{font-size:11px;font-weight:600;margin-top:6px}
 .up{color:#4bb573}.down{color:var(--danger)}
+
+/* Ideas stay visually distinct from tasks: left is for open-ended capture,
+   right is for action and completion. */
+.idea-todo-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.idea-todo-col{min-height:430px;display:flex;flex-direction:column;gap:14px}
+.idea-todo-col .ev-form{margin-top:auto}
+.capture-form{display:grid;gap:10px}
+.capture-form textarea{min-height:76px;resize:vertical}
+.idea-todo-list{display:flex;flex-direction:column;gap:8px}
+.idea-card{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid var(--line);background:var(--panel-3);border-radius:13px}
+.idea-card p{margin:1px 0 0;flex:1;font-size:13px;line-height:1.45;white-space:pre-wrap}
+.idea-card.done p{text-decoration:line-through;color:var(--muted-2)}
+.idea-card form{margin:0;flex:0 0 auto}
+.todo-toggle,.todo-delete{border:0;background:transparent;color:var(--muted);padding:2px;cursor:pointer;line-height:1}
+.todo-toggle:hover{color:var(--accent)}
+.todo-delete:hover{color:var(--danger)}
+.todo-toggle svg,.todo-delete svg{vertical-align:middle}
+@media(max-width:760px){.idea-todo-grid{grid-template-columns:1fr}.idea-todo-col{min-height:0}}
 
 .trow{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:13px;
   background:var(--panel-3);border:1px solid var(--line);text-decoration:none;color:var(--text)}

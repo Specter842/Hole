@@ -23,7 +23,7 @@ confirmed rows.
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # --------------------------------------------------------------------------- provenance
 
@@ -328,6 +328,20 @@ CREATE TABLE IF NOT EXISTS application_answers (
     created_at TEXT NOT NULL,
     updated_at TEXT
 );
+
+-- A lightweight personal workspace alongside the job-search data.  Ideas are
+-- deliberately separate from actionable to-dos so a rough thought is never
+-- presented as work that has fallen behind.
+CREATE TABLE IF NOT EXISTS todo_items (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('idea', 'todo')),
+    text TEXT NOT NULL,
+    completed INTEGER NOT NULL DEFAULT 0 CHECK (completed IN (0, 1)),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_todo_items_kind_created
+    ON todo_items(kind, completed, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_answers_pattern ON application_answers(pattern);
 
