@@ -65,6 +65,10 @@ def resolve_db_path(explicit: str | os.PathLike[str] | None = None) -> Path:
 
 
 def connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connection:
+    """The app's own database. Local sqlite normally; routed through Turso
+    instead when TURSO_DATABASE_URL is set, so nothing is lost to a redeploy
+    or spin-down on a host with no persistent disk (e.g. Render Free).
+    """
     turso_url = os.environ.get("TURSO_DATABASE_URL")
     if turso_url:
         from . import libsql_shim
