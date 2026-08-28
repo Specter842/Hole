@@ -479,13 +479,18 @@ def layout(title: str, body: str, *, active: str = "") -> str:
         f'<a href="{esc(href)}" class="{"on" if href == active else ""}">{esc(label)}</a>'
         for href, label in NAV
     )
+    logout = (
+        ""
+        if title == "Sign in"
+        else '<form method="post" action="/logout" class="inline"><button>Log out</button></form>'
+    )
     return (
         "<!doctype html>\n"
         '<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{esc(title)} - Hole</title>"
         f"<style>{STYLESHEET}</style></head><body>"
-        f'<header class="bar"><span class="brand">Hole</span><nav>{links}</nav></header>'
+        f'<header class="bar"><span class="brand">Hole</span><nav>{links}</nav>{logout}</header>'
         f"<main>{body}</main>"
         f"<script>{SITE_JS}</script></body></html>"
     )

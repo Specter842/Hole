@@ -94,6 +94,11 @@ def _head_tools() -> str:
         'fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>'
         '<span class="dot"></span></div>'
         '<span class="avatar"></span>'
+        '<form method="post" action="/logout" style="margin:0">'
+        '<button type="submit" title="Log out" '
+        'style="height:44px;padding:0 16px;border-radius:13px;border:1px solid var(--line);'
+        'background:var(--panel-2);color:var(--muted);font:inherit;font-size:13px;'
+        'font-weight:600;cursor:pointer">Log out</button></form>'
         "</div>"
     )
 
@@ -132,6 +137,41 @@ def page(
         f"{main}"
         "</main></div>"
         f"<script>{SCRIPT}</script>"
+        "</body></html>"
+    )
+
+
+def login_document(*, error: str = "") -> str:
+    """The sign-in page, in the same shell as everything past it.
+
+    Deliberately not `page()`: there is no session yet, so no sidebar, no nav,
+    no counts to show. `body`'s flex-center (from CSS) does the centering; this
+    just needs one card in the middle of it.
+    """
+    error_html = (
+        f'<div style="color:var(--danger);font-size:13px;font-weight:600;'
+        f'margin-top:-2px">{esc(error)}</div>'
+        if error
+        else ""
+    )
+    return (
+        "<!doctype html>\n"
+        '<html lang="en" data-theme="dark"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        "<title>Sign in · hole</title>"
+        '<link rel="preconnect" href="https://fonts.googleapis.com">'
+        '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+        '<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800'
+        '&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">'
+        f"<style>{CSS}</style></head><body>"
+        '<div class="search-card" style="width:min(360px,100%)">'
+        f"{_brand()}"
+        f"{error_html}"
+        '<form method="post" action="/login">'
+        f'{field("Username", "username")}'
+        f'{field("Password", "password", kind="password")}'
+        '<button class="btn-search" type="submit" style="width:100%;margin-top:4px">Sign in</button>'
+        "</form></div>"
         "</body></html>"
     )
 

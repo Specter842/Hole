@@ -18,13 +18,14 @@ Three protections, none of them optional:
 
 from __future__ import annotations
 
-import base64
 import os
 import secrets
 import sqlite3
 import threading
+import time
 import urllib.parse
 import webbrowser
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
@@ -46,6 +47,10 @@ def _page(title: str, message: str, status: int = 400) -> tuple[int, str]:
     return status, layout(title, body)
 
 
+SESSION_COOKIE = "jobsearch_session"
+SESSION_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 days
+
+
 class App:
     """Routing and actions, kept apart from the HTTP plumbing so it can be tested."""
 
@@ -54,7 +59,44 @@ class App:
         self.config = config
         self.token = token
         self.password = ""
+        self.public = False  # set by serve(); True adds Secure to the session cookie
         self._lock = threading.Lock()
+        self._sessions: dict[str, float] = {}
+        self._session_lock = threading.Lock()
+
+    # ------------------------------------------------------------------ sessions
+
+    def create_session(self) -> str:
+        token = secrets.token_urlsafe(32)
+        with self._session_lock:
+            self._sessions[token] = time.time() + SESSION_TTL_SECONDS
+        return token
+
+    def session_valid(self, token: str) -> bool:
+        if not token:
+            return False
+        with self._session_lock:
+            expiry = self._sessions.get(token)
+            if expiry is None:
+                return False
+            if expiry < time.time():
+                del self._sessions[token]
+                return False
+            return True
+
+    def destroy_session(self, token: str) -> None:
+        with self._session_lock:
+            self._sessions.pop(token, None)
+
+    def try_login(self, fields: dict[str, str]) -> str | None:
+        """Check a login form post. Returns a fresh session token on success."""
+        supplied = fields.get("password") or ""
+        if not self.password or not secrets.compare_digest(supplied, self.password):
+            return None
+        return self.create_session()
+
+    def login_page(self, *, error: str = "") -> str:
+        return evoque.login_document(error=error)
 
     # ------------------------------------------------------------------ helpers
 
@@ -482,52 +524,56 @@ def _handler_class(app: App) -> type[BaseHTTPRequestHandler]:
             self.send_header("Content-Length", "0")
             self.end_headers()
 
+        def _session_token(self) -> str:
+            jar: SimpleCookie = SimpleCookie()
+            jar.load(self.headers.get("Cookie", ""))
+            morsel = jar.get(SESSION_COOKIE)
+            return morsel.value if morsel else ""
+
         def _authorised(self) -> bool:
-            """Basic auth, but only once a password is configured.
-
-            Local use stays frictionless: with no password set this is a no-op,
-            which is safe because the socket is then loopback-only. `serve`
-            refuses a public bind without one, so the two cannot both be off.
+            """A no-op once no password is configured (safe: `serve` refuses a
+            public bind without one, so loopback-only and no-password can never
+            both be true). Otherwise requires a valid session cookie, set by a
+            successful POST to /login.
             """
-            expected = getattr(app, "password", "")
-            if not expected:
+            if not getattr(app, "password", ""):
                 return True
-            header = self.headers.get("Authorization", "")
-            if not header.startswith("Basic "):
-                return False
-            try:
-                raw = base64.b64decode(header[6:]).decode("utf-8", "replace")
-            except Exception:
-                return False
-            _user, _, supplied = raw.partition(":")
-            return secrets.compare_digest(supplied, expected)
+            return app.session_valid(self._session_token())
 
-        def _ask_for_password(self) -> None:
-            body = layout(
-                "Sign in",
-                "<h1>Sign in</h1><p class='sub'>This dashboard is password "
-                "protected.</p>",
-            ).encode("utf-8")
-            self.send_response(401)
-            self.send_header("WWW-Authenticate", 'Basic realm="jobsearch"')
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+        def _set_session_cookie(self, token: str, *, clear: bool = False) -> str:
+            jar: SimpleCookie = SimpleCookie()
+            jar[SESSION_COOKIE] = "" if clear else token
+            morsel = jar[SESSION_COOKIE]
+            morsel["httponly"] = True
+            morsel["path"] = "/"
+            morsel["samesite"] = "Lax"
+            if app.public:
+                morsel["secure"] = True
+            if clear:
+                morsel["max-age"] = 0
+            else:
+                morsel["max-age"] = SESSION_TTL_SECONDS
+            return morsel.OutputString()
 
         def _guard(self) -> bool:
-            if not self._authorised():
-                self._ask_for_password()
+            if not self._host_ok():
+                self._send(*_page("Blocked", "Unexpected Host header.", 403))
                 return False
-            if self._host_ok():
-                return True
-            self._send(*_page("Blocked", "Unexpected Host header.", 403))
-            return False
+            if not self._authorised():
+                self._redirect("/login")
+                return False
+            return True
 
         def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's naming
-            if not self._guard():
+            if not self._host_ok():
+                self._send(*_page("Blocked", "Unexpected Host header.", 403))
                 return
             parsed = urllib.parse.urlparse(self.path)
+            if parsed.path == "/login":
+                self._send(200, app.login_page())
+                return
+            if not self._guard():
+                return
             query = urllib.parse.parse_qs(parsed.query)
             status, body = app.get(parsed.path, query)
             if status == 303:
@@ -536,7 +582,8 @@ def _handler_class(app: App) -> type[BaseHTTPRequestHandler]:
                 self._send(status, body)
 
         def do_POST(self) -> None:  # noqa: N802
-            if not self._guard():
+            if not self._host_ok():
+                self._send(*_page("Blocked", "Unexpected Host header.", 403))
                 return
             length = int(self.headers.get("Content-Length") or 0)
             if length > 1_000_000:
@@ -545,6 +592,27 @@ def _handler_class(app: App) -> type[BaseHTTPRequestHandler]:
             raw = self.rfile.read(length).decode("utf-8", errors="replace")
             fields = {k: v[0] for k, v in urllib.parse.parse_qs(raw).items()}
             parsed = urllib.parse.urlparse(self.path)
+            if parsed.path == "/login":
+                token = app.try_login(fields)
+                if token is None:
+                    self._send(200, app.login_page(error="Wrong password."))
+                    return
+                self.send_response(303)
+                self.send_header("Location", "/")
+                self.send_header("Set-Cookie", self._set_session_cookie(token))
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if parsed.path == "/logout":
+                app.destroy_session(self._session_token())
+                self.send_response(303)
+                self.send_header("Location", "/login")
+                self.send_header("Set-Cookie", self._set_session_cookie("", clear=True))
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if not self._guard():
+                return
             status, body = app.post(parsed.path, fields)
             if status == 303:
                 self._redirect(body)
@@ -584,6 +652,7 @@ def serve(
         )
     app = App(db_path, config or Config.load(), secrets.token_urlsafe(32))
     app.password = password
+    app.public = host not in ("127.0.0.1", "localhost", "::1")
     server = ThreadingHTTPServer((host, port), _handler_class(app))
     url = f"http://{host}:{server.server_address[1]}/"
     if ready:
