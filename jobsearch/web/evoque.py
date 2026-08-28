@@ -170,6 +170,14 @@ def login_document(*, error: str = "") -> str:
         ".brand{text-decoration:none;color:var(--text)}"
         "body{background:radial-gradient(circle at 20% 15%,rgba(232,118,58,.22),transparent 55%),"
         "radial-gradient(circle at 85% 85%,rgba(184,72,31,.24),transparent 50%),var(--panel)}"
+        # Chrome/Edge paint an autofilled input with their own light
+        # background no matter what `background` says; only `-webkit-box-shadow`
+        # (an inset covering the field) actually overrides it, and only
+        # `-webkit-text-fill-color` overrides the text color it forces to black.
+        ".field input:-webkit-autofill,.field input:-webkit-autofill:hover,"
+        ".field input:-webkit-autofill:focus{"
+        "-webkit-box-shadow:0 0 0 1000px var(--panel-3) inset;"
+        "-webkit-text-fill-color:var(--text);caret-color:var(--text)}"
         "</style></head><body>"
         '<div class="search-card" style="width:min(360px,100%);box-shadow:var(--shadow)">'
         f"{_brand()}"
