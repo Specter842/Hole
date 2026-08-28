@@ -15,6 +15,7 @@ itself afterwards is not something you should let email employers on your behalf
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -33,6 +34,45 @@ UNKNOWN_LOCATIONS = {
     "n/a", "n a", "na", "none", "tbd", "tba", "unknown", "various",
     "multiple", "multiple locations", "-", "--",
 }
+
+# Job boards give a city/state, not a country -- "San Francisco, CA" never
+# contains the literal substring "united states", so a plain substring check
+# against a configured "United States" rejects the large majority of real US
+# postings. Recognized as a whole word/token so "CA" doesn't also match
+# "Casablanca" or a stray "us" doesn't match "campus".
+US_STATE_NAMES = {
+    "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+    "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
+    "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana",
+    "maine", "maryland", "massachusetts", "michigan", "minnesota",
+    "mississippi", "missouri", "montana", "nebraska", "nevada",
+    "new hampshire", "new jersey", "new mexico", "new york",
+    "north carolina", "north dakota", "ohio", "oklahoma", "oregon",
+    "pennsylvania", "rhode island", "south carolina", "south dakota",
+    "tennessee", "texas", "utah", "vermont", "virginia", "washington",
+    "west virginia", "wisconsin", "wyoming", "district of columbia",
+}
+US_STATE_ABBR = {
+    "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id",
+    "il", "in", "ia", "ks", "ky", "la", "me", "md", "ma", "mi", "mn", "ms",
+    "mo", "mt", "ne", "nv", "nh", "nj", "nm", "ny", "nc", "nd", "oh", "ok",
+    "or", "pa", "ri", "sc", "sd", "tn", "tx", "ut", "vt", "va", "wa", "wv",
+    "wi", "wy", "dc",
+}
+
+
+def _is_us_location(location_norm: str) -> bool:
+    if "united states" in location_norm or "usa" in location_norm.split():
+        return True
+    tokens = re.split(r"[,\s/|-]+", location_norm)
+    tokens = [t for t in tokens if t]
+    if any(t in US_STATE_NAMES for t in (" ".join(tokens[i : i + 2]) for i in range(len(tokens)))):
+        return True
+    # A 2-letter state code only counts next to a state-shaped rest of the
+    # string ("san francisco, ca" or "us-ca-menlo park") -- alone it is too
+    # likely to be a language code, an initialism, or noise ("N/A" already
+    # short-circuits earlier, but this guards the rest).
+    return any(t in US_STATE_ABBR for t in tokens) and len(tokens) > 1
 
 
 @dataclass
@@ -165,7 +205,13 @@ def screen(job: dict[str, Any], config: Config, context: PolicyContext) -> Decis
         # Boards commonly emit "N/A" or leave it blank. Unknown is not the same
         # as wrong -- let the fit score decide those rather than dropping them.
         if location and location not in UNKNOWN_LOCATIONS:
-            if not any(_norm(l) in location for l in search.locations):
+            def matches(configured: str) -> bool:
+                c = _norm(configured)
+                if c in location:
+                    return True
+                return c == "united states" and _is_us_location(location)
+
+            if not any(matches(l) for l in search.locations):
                 return Decision(
                     SKIP, [f"location '{job.get('location')}' is outside the configured list"]
                 )

@@ -141,11 +141,20 @@ def score_jobs(conn: sqlite3.Connection, g: graph.ProfileGraph, report: RunRepor
     """Fit score for every posting we have not scored yet. No API calls."""
     docs = g.match_docs()
     pending = sourcing.list_jobs(conn, status="new", order="id ASC")
+    updates = []
     for job in pending:
         text = f"{job.get('title') or ''}\n{job.get('description') or ''}"
         fit = matching.fit_score(text, docs)
-        db.update_row(conn, "jobs", int(job["id"]), {"fit_score": fit, "status": "scored"})
+        updates.append({"fit_score": fit, "status": "scored", "id": int(job["id"])})
         report.scored += 1
+    # executemany() batches this into a handful of requests instead of one
+    # per posting -- thousands of individual round-trips is where a remote DB
+    # (Turso) stopped being reliable in testing, not just slow.
+    if updates:
+        conn.executemany(
+            "UPDATE jobs SET fit_score = :fit_score, status = :status WHERE id = :id",
+            updates,
+        )
     conn.commit()
     if report.scored:
         report.note(f"Scored {report.scored} posting(s) against the profile.")
@@ -486,19 +495,31 @@ def run(
     report.note("")
     report.note(f"Reviewing {len(candidates)} scored posting(s), tailoring at most {ceiling}:")
 
+    # Skips are the overwhelming majority of any run (most sourced postings
+    # fail title/location/fit), so they're collected and written in one
+    # executemany() rather than one execute() per skip -- same reasoning as
+    # score_jobs() above. Anything that passes screening still writes
+    # immediately inside process_job(); that path is already rate-limited to
+    # `ceiling` per run, so it was never the hot loop.
+    skips: list[dict[str, Any]] = []
     for job in candidates:
         screened = policy.screen(job, config, context)
         if screened.action == policy.SKIP:
-            db.update_row(
-                conn, "jobs", int(job["id"]),
-                {"status": "skipped", "skip_reason": "; ".join(screened.reasons)},
-            )
+            skips.append({
+                "id": int(job["id"]),
+                "skip_reason": "; ".join(screened.reasons),
+            })
             report.screened_out += 1
             continue
         if context.tailored_this_run >= ceiling:
             continue
         process_job(conn, config, g, job, context, report, dry_run=dry_run)
 
+    if skips:
+        conn.executemany(
+            "UPDATE jobs SET status = 'skipped', skip_reason = :skip_reason WHERE id = :id",
+            skips,
+        )
     conn.commit()
     _finish(conn, report)
     return report

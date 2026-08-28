@@ -9,9 +9,17 @@ libsql_client's ClientSync (HTTP transport -- no native/Rust build required),
 so db.py can hand back one of these in place of a real sqlite3.Connection
 without every caller needing to change.
 
-Not a general sqlite3 shim: no executemany, no cursor(), no explicit
-transactions. Every statement here runs and commits on its own, which is
-fine for this app -- nothing in it relies on multi-statement atomicity.
+Not a general sqlite3 shim: no cursor(), no explicit transactions.
+`executemany()` exists specifically for the hot loops (score every sourced
+posting, then skip most of them) that used to run one HTTP round-trip per
+row -- thousands of them, sequentially, over a real network. That was not
+just slow: read-your-writes got unreliable at that volume (a `SELECT ...
+GROUP BY status` right after a few thousand individual UPDATEs would
+disagree with itself between successive calls). Batching the same writes
+into ~200-row HTTP requests via libsql_client's batch() made both problems
+go away in testing. Every statement still runs and commits on its own
+(server-side, per statement) -- nothing in this app relies on multi-
+statement atomicity within one call.
 """
 
 from __future__ import annotations
@@ -25,6 +33,11 @@ except ImportError:  # pragma: no cover - exercised only when the extra isn't in
     libsql_client = None  # type: ignore[assignment]
 
 T = TypeVar("T")
+
+# Chunk size for executemany(). Turso's HTTP API has its own cap on request/
+# response size; this is comfortably under it while still cutting a
+# thousand-row loop down to single-digit round-trips.
+_BATCH_CHUNK = 200
 
 # A sourcing run does one HTTP round-trip per row -- thousands of them, over a
 # real network, with nothing else retrying in between. A single DNS hiccup or
@@ -122,6 +135,21 @@ class LibsqlConnection:
         else:
             args = tuple(params)
         return LibsqlCursor(_with_retry(lambda: self._client.execute(sql, args)))
+
+    def executemany(self, sql: str, seq_of_params: Iterable[Any]) -> None:
+        """Same SQL, many param sets, batched into chunked HTTP requests.
+
+        sqlite3.Connection.executemany() takes the same shape (one sql, an
+        iterable of positional sequences or dicts), so callers that already
+        build a list of updates can switch to this without restructuring.
+        """
+        statements = []
+        for params in seq_of_params:
+            args = params if isinstance(params, dict) else tuple(params)
+            statements.append((sql, args))
+        for i in range(0, len(statements), _BATCH_CHUNK):
+            chunk = statements[i : i + _BATCH_CHUNK]
+            _with_retry(lambda chunk=chunk: self._client.batch(chunk))
 
     def executescript(self, script: str) -> None:
         # Strip '--' line comments first -- schema.DDL's comments contain semicolons
