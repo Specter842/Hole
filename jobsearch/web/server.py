@@ -137,6 +137,7 @@ class App:
                     where=one("where"),
                     status=(query.get("status") or [None])[0],
                     scope=one("scope") or "remote",
+                    group=one("group") or "role",
                 )
             if len(parts) == 2 and parts[0] == "jobs" and parts[1].isdigit():
                 html = evoque_pages.job_detail(

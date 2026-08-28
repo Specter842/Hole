@@ -118,6 +118,54 @@ def _period_chip(value: Any) -> str:
     )
 
 
+# Ordered so a title matching more than one bucket lands in the more specific
+# one -- "Senior Backend Engineer, Data Platform" hits "data" before the
+# generic "swe" catch-all gets a chance. Checked against the lowercased title
+# only; the description isn't specific enough to be worth the extra noise.
+ROLE_BUCKETS: list[tuple[str, tuple[str, ...]]] = [
+    ("Internships", ("intern", "co-op", "coop")),
+    ("New Grad / Junior", ("new grad", "junior", "graduate", "entry level", "entry-level", "associate")),
+    ("Data / ML", ("data engineer", "data scientist", "machine learning", "ml engineer", "ai engineer", "applied scientist")),
+    ("DevOps / Platform / SRE", ("devops", "site reliability", " sre", "platform engineer", "infrastructure engineer")),
+    ("Mobile", (" ios ", "android", "mobile engineer")),
+    ("Frontend", ("frontend", "front-end", "front end", "ui engineer")),
+    ("Full Stack", ("full stack", "full-stack", "fullstack")),
+    ("Backend", ("backend", "back-end", "back end")),
+    ("Security", ("security engineer", "appsec", "infosec")),
+    ("Software Engineer", ("software engineer", "swe", "software developer")),
+]
+
+
+def _role_bucket(title: str) -> str:
+    t = f" {(title or '').lower()} "
+    for label, needles in ROLE_BUCKETS:
+        if any(n in t for n in needles):
+            return label
+    return "Other"
+
+
+def _grouped_job_panels(jobs: Sequence[dict[str, Any]]) -> str:
+    """One panel per role bucket, in ROLE_BUCKETS order, then Other last.
+
+    Grouping happens after the SQL query, over whatever page of rows it
+    already returned -- same 200-row cap and fit/remote ordering as the flat
+    list, just sectioned instead of run together.
+    """
+    order = [label for label, _ in ROLE_BUCKETS] + ["Other"]
+    grouped: dict[str, list[dict[str, Any]]] = {label: [] for label in order}
+    for job in jobs:
+        grouped[_role_bucket(job.get("title") or "")].append(job)
+    panels = []
+    for label in order:
+        rows = grouped[label]
+        if not rows:
+            continue
+        panels.append(
+            E.panel(f"{label} ({len(rows)})", _job_rows(rows), sub="ranked by fit, then newest")
+        )
+    return "".join(panels)
+
+
 def _job_rows(jobs: Sequence[dict[str, Any]]) -> str:
     """The reference's flight rows: source, company, title, fit."""
     out = []
@@ -267,6 +315,7 @@ def jobs(
     where: str = "",
     status: str | None = None,
     scope: str = "remote",
+    group: str = "role",
 ) -> str:
     """Postings. Remote-first: `scope` defaults to remote-only, because that is
     what this search is actually for. `scope=all` opens it back up rather than
@@ -304,14 +353,19 @@ def jobs(
     remote, onsite = pages._remote_split(conn)
 
     def keep(**over: str) -> str:
-        parts = {"q": q, "where": where, "status": status or "", "scope": scope}
+        parts = {"q": q, "where": where, "status": status or "", "scope": scope, "group": group}
         parts.update(over)
         return "/jobs?" + "&".join(f"{k}={esc(v)}" for k, v in parts.items() if v)
 
+    grouped = group != "off"
     scope_toggle = (
         '<div class="seg">'
         f'<a class="{"on" if remote_only else ""}" href="{keep(scope="remote")}">Remote only</a>'
         f'<a class="{"" if remote_only else "on"}" href="{keep(scope="all")}">All</a>'
+        "</div>"
+        '<div class="seg">'
+        f'<a class="{"on" if grouped else ""}" href="{keep(group="role")}">By role</a>'
+        f'<a class="{"" if grouped else "on"}" href="{keep(group="off")}">Flat list</a>'
         "</div>"
     )
     sidebar = E.search_card(action="/jobs", q=q, where=where, extra=scope_toggle) + E.list_panel(
@@ -332,17 +386,24 @@ def jobs(
         + E.stat(f"{(remote/((remote+onsite) or 1))*100:.0f}%", "of all postings are remote")
         + "</div>"
     )
+    if not rows:
+        listing = E.panel(
+            "0 postings", '<div class="empty">Nothing matches that search.</div>', sub=""
+        )
+    elif grouped:
+        listing = _grouped_job_panels(rows)
+    else:
+        listing = E.panel(
+            f"{len(rows)} postings", _job_rows(rows), sub="ranked by fit, then newest"
+        )
+
     body = (
         head
         + '<div class="grid g2" style="margin-bottom:16px">'
         + E.panel("By source", E.bars(by_source), sub="where postings came from")
         + E.panel("By location", E.bars(by_loc), sub="top locations named")
         + "</div>"
-        + E.panel(
-            f"{len(rows)} postings",
-            _job_rows(rows) or '<div class="empty">Nothing matches that search.</div>',
-            sub="ranked by fit, then newest",
-        )
+        + listing
     )
     return E.page(
         title="Jobs",
