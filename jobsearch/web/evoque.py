@@ -166,8 +166,12 @@ def login_document(*, error: str = "") -> str:
         '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
         '<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800'
         '&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">'
-        f"<style>{CSS}</style></head><body>"
-        '<div class="search-card" style="width:min(360px,100%)">'
+        f"<style>{CSS}"
+        ".brand{text-decoration:none;color:var(--text)}"
+        "body{background:radial-gradient(circle at 20% 15%,rgba(232,118,58,.22),transparent 55%),"
+        "radial-gradient(circle at 85% 85%,rgba(184,72,31,.24),transparent 50%),var(--panel)}"
+        "</style></head><body>"
+        '<div class="search-card" style="width:min(360px,100%);box-shadow:var(--shadow)">'
         f"{_brand()}"
         f"{error_html}"
         '<form method="post" action="/login">'
