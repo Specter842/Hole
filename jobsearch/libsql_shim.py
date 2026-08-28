@@ -16,12 +16,45 @@ fine for this app -- nothing in it relies on multi-statement atomicity.
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Iterator
+import time
+from typing import Any, Callable, Iterable, Iterator, TypeVar
 
 try:
     import libsql_client
 except ImportError:  # pragma: no cover - exercised only when the extra isn't installed
     libsql_client = None  # type: ignore[assignment]
+
+T = TypeVar("T")
+
+# A sourcing run does one HTTP round-trip per row -- thousands of them, over a
+# real network, with nothing else retrying in between. A single DNS hiccup or
+# dropped connection would otherwise abort the whole run partway through, with
+# whatever was already committed staying committed and everything after it
+# lost. Retried errors are ones a network blip plausibly causes; a real query
+# error (bad SQL, a constraint violation) isn't in this list and still raises
+# immediately, on the first try, same as before this existed.
+_RETRIABLE = (OSError, TimeoutError)
+_MAX_ATTEMPTS = 4
+_BACKOFF_SECONDS = (0.5, 1.5, 3.0)
+
+
+def _with_retry(call: Callable[[], T]) -> T:
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            return call()
+        except _RETRIABLE:
+            if attempt == _MAX_ATTEMPTS - 1:
+                raise
+            time.sleep(_BACKOFF_SECONDS[attempt])
+        except Exception as exc:  # libsql_client wraps transport errors, incl. DNS
+            # ClientConnectorDNSError, ServerDisconnectedError, etc. all subclass
+            # OSError *except* when aiohttp re-wraps them -- checking the message
+            # is unfortunately the reliable signal across aiohttp versions.
+            transient = ("getaddrinfo", "Connection", "Timeout", "disconnected", "reset")
+            if attempt == _MAX_ATTEMPTS - 1 or not any(t in str(exc) for t in transient):
+                raise
+            time.sleep(_BACKOFF_SECONDS[attempt])
+    raise AssertionError("unreachable")  # loop always returns or raises above
 
 
 class LibsqlRow:
@@ -88,7 +121,7 @@ class LibsqlConnection:
             args = params
         else:
             args = tuple(params)
-        return LibsqlCursor(self._client.execute(sql, args))
+        return LibsqlCursor(_with_retry(lambda: self._client.execute(sql, args)))
 
     def executescript(self, script: str) -> None:
         # Strip '--' line comments first -- schema.DDL's comments contain semicolons
@@ -101,7 +134,7 @@ class LibsqlConnection:
         )
         statements = [s.strip() for s in uncommented.split(";") if s.strip()]
         if statements:
-            self._client.batch(statements)
+            _with_retry(lambda: self._client.batch(statements))
 
     def commit(self) -> None:
         pass  # each statement above already committed server-side; no open transaction here

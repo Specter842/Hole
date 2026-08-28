@@ -12,6 +12,7 @@ and trust the fit scores.
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -145,7 +146,18 @@ class Config:
     def load(cls, path: str | Path | None = None) -> "Config":
         config_path = Path(path) if path else PROJECT_ROOT / CONFIG_NAME
         if not config_path.is_file():
-            return cls(path=config_path)
+            # config.toml is gitignored -- it can carry Adzuna/USAJobs keys, and
+            # the tool never rewrites it, so hand-edits survive. A host with no
+            # persistent disk (e.g. Render's free tier) never gets a copy from
+            # git, so it never gets one at all unless it's handed one this way:
+            # JOBSEARCH_CONFIG_TOML holding the file's contents verbatim, same
+            # place every other secret on that host lives (env vars, not files).
+            inline = os.environ.get("JOBSEARCH_CONFIG_TOML")
+            if inline:
+                config_path.parent.mkdir(parents=True, exist_ok=True)
+                config_path.write_text(inline, encoding="utf-8")
+            else:
+                return cls(path=config_path)
         try:
             raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
         except tomllib.TOMLDecodeError as exc:

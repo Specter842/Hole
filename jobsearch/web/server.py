@@ -526,13 +526,6 @@ def _handler_class(app: App) -> type[BaseHTTPRequestHandler]:
             expected = os.environ.get("JOBSEARCH_HOST", "").strip().lower()
             return bool(expected) and host == expected
 
-        def _host_debug(self) -> str:
-            # TEMPORARY diagnostic -- remove once the mismatch is found.
-            raw_host = self.headers.get("Host") or "(no Host header)"
-            raw_expected = os.environ.get("JOBSEARCH_HOST")
-            expected_repr = repr(raw_expected) if raw_expected is not None else "(unset)"
-            return f"Received Host: {raw_host!r}. JOBSEARCH_HOST env var: {expected_repr}."
-
         def _send(self, status: int, body: str) -> None:
             payload = body.encode("utf-8")
             self.send_response(status)
@@ -612,7 +605,7 @@ def _handler_class(app: App) -> type[BaseHTTPRequestHandler]:
 
         def _guard(self) -> bool:
             if not self._host_ok():
-                self._send(*_page("Blocked", self._host_debug(), 403))
+                self._send(*_page("Blocked", "Unexpected Host header.", 403))
                 return False
             if not self._authorised():
                 self._redirect("/login")
@@ -621,7 +614,7 @@ def _handler_class(app: App) -> type[BaseHTTPRequestHandler]:
 
         def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's naming
             if not self._host_ok():
-                self._send(*_page("Blocked", self._host_debug(), 403))
+                self._send(*_page("Blocked", "Unexpected Host header.", 403))
                 return
             parsed = urllib.parse.urlparse(self.path)
             if parsed.path == "/login":
@@ -638,7 +631,7 @@ def _handler_class(app: App) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:  # noqa: N802
             if not self._host_ok():
-                self._send(*_page("Blocked", self._host_debug(), 403))
+                self._send(*_page("Blocked", "Unexpected Host header.", 403))
                 return
             length = int(self.headers.get("Content-Length") or 0)
             if length > 1_000_000:
