@@ -205,6 +205,13 @@ _EXTRA_CSS = """
    so without this the columns stand at their full content height and `.app`
    just clips them -- the list never gets to scroll. */
 .sidebar,.main{min-height:0}
+/* `min-height:0` alone lets the sidebar shrink to the grid row's height, but
+   shrinking still clips whatever doesn't fit -- nav plus the job-search
+   filters plus the search button run past one screenful on shorter windows.
+   It needs its own scrollbar, same as `.main-scroll` gets one below. */
+.sidebar{overflow-y:auto}
+.sidebar::-webkit-scrollbar{width:6px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:9px}
 @media(max-width:1040px){.app{height:auto;grid-template-rows:none}}
 .brand{text-decoration:none;color:var(--text)}
 .nav{display:flex;flex-direction:column;gap:2px;background:var(--panel-2);
