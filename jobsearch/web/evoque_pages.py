@@ -252,7 +252,7 @@ def dashboard(conn: sqlite3.Connection, config: Config) -> str:
         sub=f"{counts['jobs']:,} postings across {len(by_country)} countries",
         active="",
         sidebar=sidebar,
-        main=canvas + badge + arc_card + panel + zoom + credit,
+        main=canvas + badge + arc_card + panel + zoom + credit + E.panel("College listings", f'<div class="trow"><span class="ti">European transfer possibilities</span><span class="tag">{int(conn.execute("SELECT COUNT(*) FROM college_listings").fetchone()[0])}</span><span class="go"><a href="/colleges">Open</a></span></div>', sub="Save every option and its requirements after year two"),
         counts=counts,
     )
 
@@ -912,6 +912,23 @@ def runs(conn: sqlite3.Connection) -> str:
 
 
 # --------------------------------------------------------------------------- ideas and to-dos
+
+
+def colleges(conn: sqlite3.Connection, token: str) -> str:
+    rows = db.rows_to_dicts(conn.execute("SELECT * FROM college_listings ORDER BY id DESC").fetchall())
+    def cards(items):
+        if not items: return '<div class="empty">No colleges saved yet.</div>'
+        out=[]
+        for r in items:
+            s=r.get("status") or "not_started"
+            opts=''.join(f'<option value="{x}"{" selected" if x==s else ""}>{label}</option>' for x,label in (("not_started","Not started"),("in_progress","In progress"),("completed","Completed")))
+            out.append(f'<div class="college-card"><div><b>{esc(r["name"])}</b><span>{esc(r.get("country") or "")} · {esc(r.get("program") or "Transfer")}</span><p>{esc(r["requirements"])}</p>' + (f'<a href="{esc(r["url"])}" target="_blank">Admissions source</a>' if r.get("url") else '') + f'</div><form method="post" action="/colleges/{int(r["id"])}/status"><input type="hidden" name="token" value="{esc(token)}"><select name="status" onchange="this.form.submit()">{opts}</select></form><form method="post" action="/colleges/{int(r["id"])}/delete"><input type="hidden" name="token" value="{esc(token)}"><button class="todo-delete" type="submit" aria-label="Delete">{E.icon("trash",15)}</button></form></div>')
+        return ''.join(out)
+    form=E.form("/colleges/add", token, E.field("College", "name")+E.field("European country", "country", ph="e.g. Netherlands")+E.field("Program / degree", "program")+E.textarea("Transfer requirements after year 2", "requirements", rows=5)+E.field("Admissions source link", "url", ph="https://"), "Save college", cls="capture-form")
+    status_bar='<div class="pub-status-bar">'+''.join(f'<span><i class="status-dot {s}"></i>{label}<b>{sum(1 for r in rows if r.get("status")==s)}</b></span>' for s,label in (("not_started","Not started"),("in_progress","In progress"),("completed","Completed")))+'</div>'
+    body=status_bar+'<div class="grid g2" style="margin-top:16px">'+E.panel("Saved European colleges", cards(rows), sub="Transfer requirements are stored exactly as you enter them")+E.panel("Add a possibility", form, sub="Europe only · verify requirements with the linked admissions source")+'</div>'
+    sidebar=E.list_panel(title="College search", sub=f"{len(rows)} possibilities saved", rows=''.join(f'<div class="trow"><span class="ti">{esc(r["name"])}</span><span class="tag">{esc(r["country"])}</span></div>' for r in rows[:8]))
+    return E.page(title="College Listings", heading="College Listings", sub="European transfer possibilities after second year", active="colleges", sidebar=sidebar, main=f'<div class="main-scroll">{body}</div>', counts=_counts(conn))
 
 
 def publications(conn: sqlite3.Connection, token: str) -> str:

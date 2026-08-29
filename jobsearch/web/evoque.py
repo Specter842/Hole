@@ -25,6 +25,7 @@ NAV = [
     ("", "Dashboard", "home"),
     ("todos", "Ideas & To Dos", "checklist"),
     ("publications", "Publications", "file"),
+    ("colleges", "College Listings", "graduation"),
     ("jobs", "Jobs", "briefcase"),
     ("competitions", "Competitions", "trophy"),
     ("queue", "Queue", "clock"),
@@ -53,6 +54,7 @@ ICONS = {
     "chat": '<path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-7a8 8 0 0 1 8-8h2a8 8 0 0 1 8 4z"/>',
     "check": '<path d="m5 13 4 4L19 7"/>',
     "checklist": '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3 6 1.5 1.5L7 4.5M3 12l1.5 1.5L7 10.5M3 18l1.5 1.5L7 16.5"/>',
+    "graduation": '<path d="m3 9 9-5 9 5-9 5-9-5Z"/><path d="M7 11v5c3 2 7 2 10 0v-5M21 10v6"/>',
     "x": '<path d="M6 6l12 12M18 6 6 18"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
     "trash": '<path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/>',
@@ -201,6 +203,7 @@ _EXTRA_CSS = """
 .sticky-tab.resource{background:#9ddbd1;transform:rotate(1deg)}.sticky-tab.idea{background:#e9a7bd}
 .pub-status-bar{display:flex;gap:22px;align-items:center;padding:12px 16px;border:1px solid var(--line);border-radius:13px;background:var(--panel-3);font-size:12px}.pub-status-bar span{display:flex;align-items:center;gap:7px}.pub-status-bar b{margin-left:2px}.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:#9b8f86}.status-dot.in_progress{background:#e8c96a}.status-dot.completed{background:#4bb573}
 .pub-card{display:flex;align-items:center;gap:10px;padding:11px 12px;margin:7px 0;border:1px solid var(--line);border-radius:11px;background:var(--panel-3);font-size:13px}.pub-card>div{flex:1;min-width:0}.pub-card b{display:block;white-space:pre-wrap}.pub-card a{display:block;font-size:11px;color:var(--muted-2);border:0}.pub-card select{background:var(--panel-2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:5px;font-size:11px}
+.college-card{display:flex;gap:12px;align-items:flex-start;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--panel-3);margin:8px 0}.college-card>div{flex:1}.college-card b{display:block;font-size:14px}.college-card span{display:block;color:var(--muted-2);font-size:11px}.college-card p{white-space:pre-wrap;font-size:12px;line-height:1.45;margin:8px 0}.college-card a{font-size:11px;border:0;color:var(--accent)}.college-card select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:5px;font-size:11px}
 @media(max-width:760px){.idea-todo-grid{grid-template-columns:1fr}.idea-todo-col{min-height:0}}
 
 .trow{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:13px;

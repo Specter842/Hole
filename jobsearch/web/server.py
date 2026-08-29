@@ -109,6 +109,8 @@ class App:
                 return 200, evoque_pages.todos(conn, self.token)
             if parts == ["publications"]:
                 return 200, evoque_pages.publications(conn, self.token)
+            if parts == ["colleges"]:
+                return 200, evoque_pages.colleges(conn, self.token)
             if parts == ["queue"]:
                 return 200, evoque_pages.queue(conn)
             if parts == ["resume"]:
@@ -177,6 +179,15 @@ class App:
                 return self._add_todo(conn, fields)
             if parts == ["publications", "add"]:
                 return self._add_publication_item(conn, fields)
+            if parts == ["colleges", "add"]:
+                return self._add_college(conn, fields)
+            if len(parts) == 3 and parts[0] == "colleges" and parts[1].isdigit() and parts[2] == "status":
+                status = fields.get("status", "")
+                if status in {"not_started", "in_progress", "completed"}:
+                    conn.execute("UPDATE college_listings SET status=? WHERE id=?", (status, int(parts[1]))); conn.commit()
+                return 303, "/colleges"
+            if len(parts) == 3 and parts[0] == "colleges" and parts[1].isdigit() and parts[2] == "delete":
+                conn.execute("DELETE FROM college_listings WHERE id=?", (int(parts[1]),)); conn.commit(); return 303, "/colleges"
             if len(parts) == 3 and parts[0] == "publications" and parts[1].isdigit() and parts[2] == "status":
                 status = fields.get("status", "")
                 if status in {"not_started", "in_progress", "completed"}:
@@ -283,6 +294,13 @@ class App:
         db.insert_row(conn, "publication_items", {"kind": kind, "title": title, "url": (fields.get("url") or "").strip() or None})
         conn.commit()
         return 303, "/publications"
+
+    def _add_college(self, conn: sqlite3.Connection, fields: dict[str, str]) -> tuple[int, str]:
+        name, country, requirements = tuple((fields.get(k) or "").strip() for k in ("name", "country", "requirements"))
+        if not name or not country or not requirements:
+            return 303, "/colleges"
+        db.insert_row(conn, "college_listings", {"name": name, "country": country, "program": (fields.get("program") or "").strip() or None, "requirements": requirements, "url": (fields.get("url") or "").strip() or None})
+        conn.commit(); return 303, "/colleges"
 
     # Which tables the builder page may write, and the delete confirmation each
     # needs. An allow-list, not a passthrough: the entity name arrives in the
