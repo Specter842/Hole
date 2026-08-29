@@ -914,6 +914,25 @@ def runs(conn: sqlite3.Connection) -> str:
 # --------------------------------------------------------------------------- ideas and to-dos
 
 
+def freelancing(conn: sqlite3.Connection, token: str) -> str:
+    rows = db.rows_to_dicts(conn.execute("SELECT * FROM freelance_listings ORDER BY id DESC").fetchall())
+    cats = [("ui_ux","UI/UX"),("web_dev","Web Dev"),("app_dev","App Dev"),("graphic_design","Graphic Design"),("video_editing","Video Editing")]
+    statuses = (("not_started","Not started"),("in_progress","In progress"),("completed","Completed"))
+    def cards(items):
+        if not items: return '<div class="empty">No listings saved yet.</div>'
+        out=[]
+        for r in items:
+            s=r.get("status") or "not_started"; opts=''.join(f'<option value="{x}"{" selected" if x==s else ""}>{l}</option>' for x,l in statuses)
+            out.append(f'<div class="college-card"><div><b>{esc(r["title"])}</b><span>{esc(r.get("client") or "Independent client")}</span><p>{esc(r["requirements"])}</p>' + (f'<a href="{esc(r["url"])}" target="_blank">Project source</a>' if r.get("url") else '') + f'</div><form method="post" action="/freelancing/{int(r["id"])}/status"><input type="hidden" name="token" value="{esc(token)}"><select name="status" onchange="this.form.submit()">{opts}</select></form><form method="post" action="/freelancing/{int(r["id"])}/delete"><input type="hidden" name="token" value="{esc(token)}"><button class="todo-delete" type="submit" aria-label="Delete">{E.icon("trash",15)}</button></form></div>')
+        return ''.join(out)
+    form=E.form("/freelancing/add", token, '<select name="category">'+''.join(f'<option value="{k}">{v}</option>' for k,v in cats)+'</select>'+E.field("Project", "title")+E.field("Client", "client")+E.textarea("Requirements", "requirements", rows=4)+E.field("Source link", "url", ph="https://"), "Save listing", cls="capture-form")
+    bar='<div class="pub-status-bar">'+''.join(f'<span><i class="status-dot {s}"></i>{l}<b>{sum(1 for r in rows if r.get("status")==s)}</b></span>' for s,l in statuses)+'</div>'
+    columns=''.join(E.panel(label, cards([r for r in rows if r["category"]==key])) for key,label in cats)
+    body=bar+'<div class="grid g2" style="margin-top:16px">'+E.panel("Add freelance opportunity", form, sub="Track projects by discipline")+E.panel("Coverage", E.bars([(label, sum(1 for r in rows if r["category"]==key))]), sub="Your saved opportunities")+'</div><div class="grid g2" style="margin-top:16px">'+columns+'</div>'
+    sidebar=E.list_panel(title="Freelancing", sub=f"{len(rows)} listings saved", rows=''.join(f'<div class="trow"><span class="ti">{l}</span><span class="tag">{sum(1 for r in rows if r["category"]==k)}</span></div>' for k,l in cats))
+    return E.page(title="Freelancing", heading="Freelancing", sub="UI/UX, web, app, design, and video opportunities", active="freelancing", sidebar=sidebar, main=f'<div class="main-scroll">{body}</div>', counts=_counts(conn))
+
+
 def colleges(conn: sqlite3.Connection, token: str) -> str:
     rows = db.rows_to_dicts(conn.execute("SELECT * FROM college_listings ORDER BY id DESC").fetchall())
     apprentices = db.rows_to_dicts(conn.execute("SELECT * FROM apprenticeship_listings ORDER BY id DESC").fetchall())

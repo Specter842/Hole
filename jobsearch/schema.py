@@ -360,6 +360,17 @@ CREATE TABLE IF NOT EXISTS apprenticeship_listings (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS freelance_listings (
+    id INTEGER PRIMARY KEY,
+    category TEXT NOT NULL CHECK (category IN ('ui_ux','web_dev','app_dev','graphic_design','video_editing')),
+    title TEXT NOT NULL,
+    client TEXT,
+    requirements TEXT NOT NULL,
+    url TEXT,
+    status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started','in_progress','completed')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- A lightweight personal workspace alongside the job-search data.  Ideas are
 -- deliberately separate from actionable to-dos so a rough thought is never
 -- presented as work that has fallen behind.

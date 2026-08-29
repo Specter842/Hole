@@ -26,6 +26,7 @@ NAV = [
     ("todos", "Ideas & To Dos", "checklist"),
     ("publications", "Publications", "file"),
     ("colleges", "College Listings", "graduation"),
+    ("freelancing", "Freelancing", "briefcase"),
     ("jobs", "Jobs", "briefcase"),
     ("competitions", "Competitions", "trophy"),
     ("queue", "Queue", "clock"),

@@ -111,6 +111,8 @@ class App:
                 return 200, evoque_pages.publications(conn, self.token)
             if parts == ["colleges"]:
                 return 200, evoque_pages.colleges(conn, self.token)
+            if parts == ["freelancing"]:
+                return 200, evoque_pages.freelancing(conn, self.token)
             if parts == ["queue"]:
                 return 200, evoque_pages.queue(conn)
             if parts == ["resume"]:
@@ -181,6 +183,14 @@ class App:
                 return self._add_publication_item(conn, fields)
             if parts == ["colleges", "add"]:
                 return self._add_college(conn, fields)
+            if parts == ["freelancing", "add"]:
+                return self._add_freelance(conn, fields)
+            if len(parts) == 3 and parts[0] == "freelancing" and parts[1].isdigit() and parts[2] == "status":
+                if fields.get("status") in {"not_started", "in_progress", "completed"}:
+                    conn.execute("UPDATE freelance_listings SET status=? WHERE id=?", (fields["status"], int(parts[1]))); conn.commit()
+                return 303, "/freelancing"
+            if len(parts) == 3 and parts[0] == "freelancing" and parts[1].isdigit() and parts[2] == "delete":
+                conn.execute("DELETE FROM freelance_listings WHERE id=?", (int(parts[1]),)); conn.commit(); return 303, "/freelancing"
             if parts == ["colleges", "apprenticeship", "add"]:
                 return self._add_apprenticeship(conn, fields)
             if len(parts) == 3 and parts[0] == "colleges" and parts[1].isdigit() and parts[2] == "status":
@@ -305,6 +315,12 @@ class App:
             return 303, "/colleges"
         db.insert_row(conn, "college_listings", {"name": name, "country": country, "program": (fields.get("program") or "").strip() or None, "requirements": requirements, "url": (fields.get("url") or "").strip() or None})
         conn.commit(); return 303, "/colleges"
+
+    def _add_freelance(self, conn: sqlite3.Connection, fields: dict[str, str]) -> tuple[int, str]:
+        category, title, requirements = tuple((fields.get(k) or "").strip() for k in ("category", "title", "requirements"))
+        if category not in {"ui_ux","web_dev","app_dev","graphic_design","video_editing"} or not title or not requirements: return 303, "/freelancing"
+        db.insert_row(conn, "freelance_listings", {"category": category, "title": title, "client": (fields.get("client") or "").strip() or None, "requirements": requirements, "url": (fields.get("url") or "").strip() or None})
+        conn.commit(); return 303, "/freelancing"
 
     def _add_apprenticeship(self, conn: sqlite3.Connection, fields: dict[str, str]) -> tuple[int, str]:
         firm, country, requirements = tuple((fields.get(k) or "").strip() for k in ("firm", "country", "requirements"))
