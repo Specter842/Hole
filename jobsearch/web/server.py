@@ -649,9 +649,9 @@ def serve(
     someone's address, phone number, employment history, and the ability to send
     applications on the open internet behind no door at all.
     """
-    # Local demo mode: authentication is intentionally disabled for now. Keep
-    # the loopback bind guard below so the dashboard is not exposed publicly.
-    password = ""
+    # Authentication is configured by the environment: local demo use can leave
+    # this unset, while a public Render deployment must provide a password.
+    password = os.environ.get("JOBSEARCH_PASSWORD", "")
     if host not in ("127.0.0.1", "localhost", "::1") and not password:
         raise WebError(
             f"Refusing to bind {host} with no password.\n"
