@@ -155,6 +155,7 @@ _EXTRA_CSS = """
    so without this the columns stand at their full content height and `.app`
    just clips them -- the list never gets to scroll. */
 .sidebar,.main{min-height:0}
+.sidebar{overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}.sidebar::-webkit-scrollbar{width:6px}.sidebar::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:8px}
 @media(max-width:1040px){.app{height:auto;grid-template-rows:none}}
 .brand{text-decoration:none;color:var(--text)}
 .nav{display:flex;flex-direction:column;gap:2px;background:var(--panel-2);

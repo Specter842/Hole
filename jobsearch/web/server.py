@@ -181,6 +181,8 @@ class App:
                 return self._add_publication_item(conn, fields)
             if parts == ["colleges", "add"]:
                 return self._add_college(conn, fields)
+            if parts == ["colleges", "apprenticeship", "add"]:
+                return self._add_apprenticeship(conn, fields)
             if len(parts) == 3 and parts[0] == "colleges" and parts[1].isdigit() and parts[2] == "status":
                 status = fields.get("status", "")
                 if status in {"not_started", "in_progress", "completed"}:
@@ -188,6 +190,8 @@ class App:
                 return 303, "/colleges"
             if len(parts) == 3 and parts[0] == "colleges" and parts[1].isdigit() and parts[2] == "delete":
                 conn.execute("DELETE FROM college_listings WHERE id=?", (int(parts[1]),)); conn.commit(); return 303, "/colleges"
+            if len(parts) == 4 and parts[0] == "colleges" and parts[1] == "apprenticeship" and parts[2].isdigit() and parts[3] == "delete":
+                conn.execute("DELETE FROM apprenticeship_listings WHERE id=?", (int(parts[2]),)); conn.commit(); return 303, "/colleges"
             if len(parts) == 3 and parts[0] == "publications" and parts[1].isdigit() and parts[2] == "status":
                 status = fields.get("status", "")
                 if status in {"not_started", "in_progress", "completed"}:
@@ -300,6 +304,12 @@ class App:
         if not name or not country or not requirements:
             return 303, "/colleges"
         db.insert_row(conn, "college_listings", {"name": name, "country": country, "program": (fields.get("program") or "").strip() or None, "requirements": requirements, "url": (fields.get("url") or "").strip() or None})
+        conn.commit(); return 303, "/colleges"
+
+    def _add_apprenticeship(self, conn: sqlite3.Connection, fields: dict[str, str]) -> tuple[int, str]:
+        firm, country, requirements = tuple((fields.get(k) or "").strip() for k in ("firm", "country", "requirements"))
+        if not firm or not country or not requirements: return 303, "/colleges"
+        db.insert_row(conn, "apprenticeship_listings", {"firm": firm, "country": country, "role": (fields.get("role") or "").strip() or None, "requirements": requirements, "url": (fields.get("url") or "").strip() or None})
         conn.commit(); return 303, "/colleges"
 
     # Which tables the builder page may write, and the delete confirmation each

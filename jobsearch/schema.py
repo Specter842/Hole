@@ -349,6 +349,17 @@ CREATE TABLE IF NOT EXISTS college_listings (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS apprenticeship_listings (
+    id INTEGER PRIMARY KEY,
+    firm TEXT NOT NULL,
+    country TEXT NOT NULL,
+    role TEXT,
+    requirements TEXT NOT NULL,
+    url TEXT,
+    status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started','in_progress','completed')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- A lightweight personal workspace alongside the job-search data.  Ideas are
 -- deliberately separate from actionable to-dos so a rough thought is never
 -- presented as work that has fallen behind.
